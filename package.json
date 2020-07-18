@@ -17,19 +17,21 @@
   },
   "homepage": "https://github.com/alexanderhunter80/wizards#readme",
   "dependencies": {
-    "@angular-redux/store": "^9.0.0",
-    "@angular/core": "^6.0.6",
-    "@types/socket.io-client": "^1.4.32",
-    "body-parser": "^1.18.3",
-    "cloner": "^0.4.0",
-    "express": "^4.16.3",
+    "@angular-redux/store": "^10.0.0",
+    "@angular/core": "^10.0.4",
+    "@types/express": "^4.17.7",
+    "@types/socket.io": "^2.1.8",
+    "@types/socket.io-client": "^1.4.33",
+    "body-parser": "^1.19.0",
+    "cloner": "^2.0.0",
+    "express": "^4.17.1",
     "mo-js": "^0.288.2",
-    "mongoose": "^5.1.6",
+    "mongoose": "^5.9.25",
     "path": "^0.12.7",
-    "redux": "^4.0.0",
-    "rxjs": "^6.2.1",
-    "socket.io": "^2.1.1",
-    "socket.io-client": "^2.1.1",
-    "zone.js": "^0.8.26"
+    "redux": "^4.0.5",
+    "rxjs": "^6.6.0",
+    "socket.io": "^2.3.0",
+    "socket.io-client": "^2.3.0",
+    "zone.js": "^0.10.3"
   }
 }
