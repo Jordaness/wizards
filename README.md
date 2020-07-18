@@ -22,8 +22,9 @@ Jym Beau Tuesday Paschall
 
 1. Download the source code via github
 2. Open a terminal window and navigate to the folder where the file was downloaded
-3. Navigate into the public folder, and use the "npm install" command to install any required dependancies
-4. Navigate up one folder back into the main folder
+3. Run the npm install command to download the base packages for the backend of the application./
+4. Navigate into the public folder, and use the "npm install" command to install any required packages and dependencies for the application UI system
+5. Navigate up one folder back into the main folder
    - Activate the server with the command "node server/server.js"
-5. Open a web browser and navigate to localhost:8000, the application should now be visible.
+6. Open a web browser and navigate to localhost:8000, the application should now be visible.
    - Play multiplayer by having another player open a web browser and navigate to http://{Your Local IP Address}:8000
