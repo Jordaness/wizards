@@ -161,7 +161,7 @@ function reducer(state = initialState, action){
                 newState.history.push(currentPlayer.name + ' has earned a free spell card(Brillance)!');
             }
             return newState;
-
+        }
 
         case actions.ATTACK: {
             console.log('reducers.js heard ATTACK');
@@ -281,9 +281,7 @@ function reducer(state = initialState, action){
                                 target.hptokens--;
                                 hpSubtract--;
                                 if(action.magnitize){
-                                    let caster = newState.players.find((p)=>{
-                                        return p.id == action.actor.id;
-                                    })
+                                    let caster = findPlayerById(newState.players, action.actor.id);
                                     caster.hptokens++;
                                 }
                             }
