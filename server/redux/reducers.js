@@ -485,8 +485,9 @@ function reducer(state = initialState, action){
             newState = Object.assign({}, state);
             currentPlayer = newState.players.find((player)=>{
                 return player.id == action.actor.id;
-            })   
+            })
             idx = currentPlayer.spells.findIndex(spell=>spell.name==action.spell.name);
+            if (idx === -1) return state;
             currentPlayer.spells.splice(idx, 1);
             newState.history.push(action.message);
             return newState;
@@ -497,11 +498,14 @@ function reducer(state = initialState, action){
             newState = Object.assign({}, state);
             currentPlayer = newState.players.find((player)=>{
                 return player.id == action.actor.id;
-            })   
+            })
             idx = currentPlayer.spells.findIndex(spell=>spell.name==action.spell.name);
+            if (idx === -1) return state;
             currentPlayer.spells.splice(idx, 1);
             // one more spell
-            currentPlayer.spells.splice(Math.floor(Math.random()*currentPlayer.spells.length), 1);
+            if (currentPlayer.spells.length > 0) {
+                currentPlayer.spells.splice(Math.floor(Math.random()*currentPlayer.spells.length), 1);
+            }
             // 1 damage
             currentPlayer.health--;
             newState.history.push(action.message);
