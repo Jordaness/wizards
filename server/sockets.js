@@ -2,6 +2,7 @@ const gameStore = require('./redux/store');
 const actions = require('./redux/actions');
 const validate = require('./validate');
 const allSpells = require('./allspells');
+const { sanitizeState } = require('./redux/helpers');
 
 const cloner = require('cloner');
 
@@ -29,8 +30,7 @@ module.exports = function(io){
 
     function update(){
         console.log('sockets.js says: emitting UPDATE');
-        io.emit('UPDATE', gameStore.getState());
-        console.log(gameStore.getState());
+        io.emit('UPDATE', sanitizeState(gameStore.getState()));
     }
 
     function actOrDont(actor, socket){
@@ -59,8 +59,8 @@ module.exports = function(io){
         gameStore.dispatch(actions.addPlayer(socket.id, wizName));
         console.log(gameStore.getState());
         console.log('emitting INIT / UPDATE');
-        socket.emit('INIT', gameStore.getState());
-        socket.broadcast.emit('UPDATE', gameStore.getState());
+        socket.emit('INIT', sanitizeState(gameStore.getState()));
+        socket.broadcast.emit('UPDATE', sanitizeState(gameStore.getState()));
 
         socket.on('disconnect', function(){
             let theState = gameStore.getState();
@@ -150,13 +150,13 @@ module.exports = function(io){
             }
             gameStore.dispatch(actions.divine(payload.actor, payload.value, payload.yx))
             // regular state with HIGHLIGHT data
-            socket.broadcast.emit('UPDATE', gameStore.getState());
+            socket.broadcast.emit('UPDATE', sanitizeState(gameStore.getState()));
             // super secret state with divined cards faceUp = true
             let ephemeral = cloner.deep.copy(gameStore.getState());
             for (const c of payload.yx){
                 ephemeral.gameboard.grid[c[0]][c[1]].faceUp = true;
             }
-            socket.emit('UPDATE', ephemeral);
+            socket.emit('UPDATE', sanitizeState(ephemeral));
         });
 
 
@@ -399,13 +399,13 @@ module.exports = function(io){
             }
             gameStore.dispatch(actions.divine(payload.actor, payload.value, payload.yx))
             // regular state with HIGHLIGHT data
-            socket.broadcast.emit('UPDATE', gameStore.getState());
+            socket.broadcast.emit('UPDATE', sanitizeState(gameStore.getState()));
             // super secret state with divined cards faceUp = true
             let ephemeral = cloner.deep.copy(gameStore.getState());
             for (const c of payload.yx){
                 ephemeral.gameboard.grid[c[0]][c[1]].faceUp = true;
             }
-            socket.emit('UPDATE', ephemeral);
+            socket.emit('UPDATE', sanitizeState(ephemeral));
         });
 
         socket.on(actions.DIVINE_END, (payload)=>{

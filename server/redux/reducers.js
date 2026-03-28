@@ -1,8 +1,12 @@
-const redux = require('redux');
 const actions = require('./actions');
 const Player = require('../classes/player');
 const Gameboard = require('../classes/gameboard');
 const Deck = require('../classes/deck');
+const { findPlayerById, checkDeath, isGameOver, shuffle } = require('./helpers');
+const combat = require('./handlers/combat');
+const tokens = require('./handlers/tokens');
+const cards = require('./handlers/cards');
+const spells = require('./handlers/spells');
 
 const initialState = {
     gameOn: false,
@@ -15,67 +19,6 @@ const initialState = {
     history: [],
     learnHelper: {keep: null, cardsDrawn: []},
     highlight: [],
-}
-
-function findPlayerById(players, id) {
-    return players.find(p => p.id == id);
-}
-
-function applyDamage(target, damage) {
-    while (target.shields > 0 && damage > 0) {
-        target.shields--;
-        damage--;
-    }
-    target.health -= damage;
-    return damage; // return remaining damage after shields (useful for drain)
-}
-
-function checkDeath(player){
-    if(player.health <= 0){
-        player.isGhost = true;
-        player.shields = 0;
-        player.passives.brilliance = false;
-        player.passives.overdrive = false;
-        player.passives.telepathy = false;
-        player.passives.hypermetabolism = false;
-        player.aptokens = 0;
-        player.hptokens = 0;
-        console.log('HE DED');
-        return true;
-    }
-    return false;
-}
-
-function isGameOver(state){
-    let playersAlive = state.players.reduce((alive, player)=>{
-        if(player.isGhost){
-            return alive + 0;
-        } else {
-            return alive + 1;
-        }
-    }, 0);
-    console.log(playersAlive+' players still alive');
-    if (playersAlive == 1){
-        state.gameOn = false;
-        state.gameOver = true;
-        state.winner = state.players.find((player)=>{
-            return !player.isGhost;
-        });
-        state.history.push(state.winner.name+' won the game, and is now the Archchancellor!');
-    }
-    return state;
-}
-
-function shuffle(array) {  // Fisher-Yates shuffle
-    let counter = array.length;
-    while (counter > 0) {
-        let index = Math.floor(Math.random() * counter);
-        counter--;
-        let temp = array[counter];
-        array[counter] = array[index];
-        array[index] = temp;
-    }
-    return array;  
 }
 
 function reducer(state = initialState, action){
@@ -137,258 +80,73 @@ function reducer(state = initialState, action){
             console.log('reducers.js heard TURN_START');
             let newState = Object.assign({}, state);
             let currentPlayer = newState.players[newState.currentTurn];
-            newState.history.push(currentPlayer.name+' started their turn');
+            newState.history.push(currentPlayer.name + ' started their turn');
             // ap +- tokens
-            if (currentPlayer.aptokens > 0){
-                currentPlayer.adjustActions++;
-                currentPlayer.aptokens--;
-                
-                if (currentPlayer.aptokens > 0 && currentPlayer.passives.overdrive) {
-                    currentPlayer.adjustActions++;
-                    currentPlayer.aptokens--;
-                    newState.history.push(currentPlayer.name+' consumes 2 haste tokens(Overdrive) and has been awarded 2 extra actions!');
-                } else {
-                    newState.history.push(currentPlayer.name+' consumes 1 haste token and has been awarded an extra action!');
-                }
-            } else if (currentPlayer.aptokens < 0){
-                currentPlayer.adjustActions--;
-                currentPlayer.aptokens++;
-                newState.history.push(currentPlayer.name+'  is slowed by a slow token and loses the ability to divine!');
-
-            }
+            let apMessages = currentPlayer.processApTokens();
+            newState.history.push(...apMessages);
             // brilliance free spellcard awarded
-            if(currentPlayer.passives.brilliance){
+            if (currentPlayer.passives.brilliance) {
                 currentPlayer.spells.push(newState.gameboard.spellDeck.topCard());
                 newState.history.push(currentPlayer.name + ' has earned a free spell card(Brillance)!');
             }
             return newState;
         }
 
-        case actions.ATTACK: {
+        case actions.ATTACK:
             console.log('reducers.js heard ATTACK');
-            let newState = Object.assign({}, state);
-            let target = findPlayerById(newState.players, action.target.id);
-            if (target.isGhost) {
-                console.log('Target is already dead, skipping ATTACK');
-                return state;
-            }
-            applyDamage(target, action.value);
-            newState.history.push(action.message);
-            checkDeath(target);
-            isGameOver(newState);
-            return newState;
-        }
+            return combat.handleAttack(state, action);
 
-
-        case actions.ATTACK_ALL: {
+        case actions.ATTACK_ALL:
             console.log('reducers.js heard ATTACK_ALL');
-            let newState = Object.assign({}, state);
-            newState.history.push(action.message);
-            for (let target of newState.players) {
-                if (target.id == action.actor.id || target.isGhost) {
-                    continue;
-                }
-                applyDamage(target, action.value);
-                checkDeath(target);
-                isGameOver(newState);
-            }
-            return newState;
-        }
+            return combat.handleAttackAll(state, action);
 
-
-        case actions.DRAIN: {
+        case actions.DRAIN:
             console.log('reducers.js heard DRAIN');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            let target = findPlayerById(newState.players, action.target.id);
-            if (target.isGhost) {
-                console.log('Target is already dead, skipping DRAIN');
-                return state;
-            }
-            // remove shields first
-            let damage = action.value;
-            while (target.shields > 0 && damage > 0) {
-                target.shields--;
-                damage--;
-            }
-            // drain: damage target, heal actor
-            while (damage > 0 && target.health > 0) {
-                target.health--;
-                damage--;
-                if (currentPlayer.health < 5) { currentPlayer.health++; }
-            }
-            newState.history.push(action.message);
-            checkDeath(target);
-            isGameOver(newState);
-            return newState;
-        }
+            return combat.handleDrain(state, action);
 
-
-        case actions.CURE: {
+        case actions.CURE:
             console.log('reducers.js heard CURE');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            currentPlayer.health += action.value;
-            if (currentPlayer.health > 5) { currentPlayer.health = 5; }
-            newState.history.push(action.message);
-            return newState;
-        }
+            return combat.handleCure(state, action);
 
-        case actions.SHIELD: {
+        case actions.SHIELD:
             console.log('reducers.js heard SHIELD');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            currentPlayer.shields += action.value;
-            newState.history.push(action.message);
-            return newState;
-        }
+            return combat.handleShield(state, action);
 
-        case actions.HP_PLUS: {
+        case actions.HP_PLUS:
             console.log('reducers.js heard HP_PLUS');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            currentPlayer.hptokens += action.value;
-            newState.history.push(action.message);
-            return newState;
-        }
+            return tokens.handleHpPlus(state, action);
 
-
-        case actions.HP_MINUS: {
+        case actions.HP_MINUS:
             console.log('reducers.js heard HP_MINUS');
-            let newState = Object.assign({}, state);
-            if(action.targetPlayer){ //single target
-                let currentPlayer = findPlayerById(newState.players, action.target.id);
-                if (action.limited && currentPlayer.hptokens <= 0) {
-                    // skip player — nothing to strip from negative pile
-                } else if (action.limited && currentPlayer.hptokens > 0){
-                    let hpSubtract = action.value;
-                    while(currentPlayer.hptokens > 0 && hpSubtract > 0){ // stripping tokens
-                        currentPlayer.hptokens--;
-                        hpSubtract--;
-                    }
-                } else { // regular hp_minus scenario
-                    currentPlayer.hptokens -= action.value;
-                }
-            } else { // AOE
-                for(let target of newState.players){
-                    if(target.id == action.actor.id){ // Skip the original castor
-                        continue;
-                    } else {
-                        if (action.limited && target.hptokens <= 0) { // skip player if stripping from negative pile. 
-                            continue;
-                        } else if (action.limited && target.hptokens > 0){
-                            let hpSubtract = action.value;
-                            let caster = action.magnitize ? findPlayerById(newState.players, action.actor.id) : null;
-                            while(target.hptokens > 0 && hpSubtract > 0){ // stripping tokens
-                                target.hptokens--;
-                                hpSubtract--;
-                                if(caster){
-                                    caster.hptokens++;
-                                }
-                            }
-                        } else { //regular hp_minus scenario
-                            target.hptokens -= action.value;
-                        }
-                    }
-                }
-            }
-            newState.history.push(action.message);
-            return newState;
-        }
+            return tokens.handleHpMinus(state, action);
 
-        case actions.AP_PLUS: {
+        case actions.AP_PLUS:
             console.log('reducers.js heard AP_PLUS');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            currentPlayer.aptokens += action.value;
-            newState.history.push(action.message);
-            return newState;
-        }
+            return tokens.handleApPlus(state, action);
 
-
-        case actions.AP_MINUS: {
+        case actions.AP_MINUS:
             console.log('reducers.js heard AP_MINUS');
-            let newState = Object.assign({}, state);
-            if(action.targetPlayer){ // single target
-                let currentPlayer = findPlayerById(newState.players, action.target.id);
-                if (action.limited && currentPlayer.aptokens <= 0) {
-                    // skip player — nothing to strip from negative pile
-                } else if (action.limited && currentPlayer.aptokens > 0){
-                    let apSubtract = action.value;
-                    while(currentPlayer.aptokens > 0 && apSubtract > 0){ // stripping tokens
-                        currentPlayer.aptokens--;
-                        apSubtract--;
-                    }
-                } else { // regular ap_minus scenario
-                    currentPlayer.aptokens -= action.value;
-                }
-            } else { // AOE
-                for(let target of newState.players){
-                    if(target.id == action.actor.id){ // Skip the original castor
-                        continue;
-                    } else {
-                        if (action.limited && target.aptokens <= 0) { // skip player if stripping from negative pile. 
-                            continue;
-                        } else if (action.limited && target.aptokens > 0){
-                            let apSubtract = action.value;
-                            while(target.aptokens > 0 && apSubtract > 0){ // stripping tokens
-                                target.aptokens--;
-                                apSubtract--;
-                            }
-                        } else { // regular ap_minus scenario
-                            target.aptokens -= action.value;
-                        }
-                    }
-                }
-            }
-            newState.history.push(action.message);
-            return newState;
-        }
+            return tokens.handleApMinus(state, action);
 
-        case actions.DIVINE: {
+        case actions.DIVINE:
             console.log('reducers.js heard DIVINE');
-            let newState = Object.assign({}, state);
-            newState.highlight = action.yx;
-            newState.history.push(action.message);
-            return newState;
-        }
+            return cards.handleDivine(state, action);
 
-        case actions.UNHIGHLIGHT: {
+        case actions.UNHIGHLIGHT:
             console.log('reducers.js heard UNHIGHLIGHT');
-            let newState = Object.assign({}, state, {highlight: []});
-            return newState;
-        }
+            return cards.handleUnhighlight(state, action);
 
-        case actions.WEAVE: {
+        case actions.WEAVE:
             console.log('reducers.js heard WEAVE');
-            let newState = Object.assign({}, state);
-            newState.highlight = [action.yx1, action.yx2];
-            let temp = newState.gameboard.grid[action.yx1[0]][action.yx1[1]];
-            newState.gameboard.grid[action.yx1[0]][action.yx1[1]] = newState.gameboard.grid[action.yx2[0]][action.yx2[1]];
-            newState.gameboard.grid[action.yx2[0]][action.yx2[1]] = temp;
-            newState.history.push(action.message);
-            return newState;
-        }
+            return cards.handleWeave(state, action);
 
-        case actions.SCRY: {
+        case actions.SCRY:
             console.log('reducers.js heard SCRY');
-            let newState = Object.assign({}, state);
-            for (let yx of action.yx) {
-                newState.gameboard.grid[yx[0]][yx[1]].faceUp = true;
-            }
-            newState.history.push(action.message);
-            return newState;
-        }
+            return cards.handleScry(state, action);
 
-        case actions.OBSCURE: {
+        case actions.OBSCURE:
             console.log('reducers.js heard OBSCURE');
-            let newState = Object.assign({}, state);
-            for (let yx of action.yx) {
-                newState.gameboard.grid[yx[0]][yx[1]].faceUp = false;
-            }
-            newState.history.push(action.message);
-            return newState;
-        }
+            return cards.handleObscure(state, action);
 
 
         case actions.REFRESH:
@@ -400,110 +158,29 @@ function reducer(state = initialState, action){
             return state;
 
 
-        case actions.LEARN: {
+        case actions.LEARN:
             console.log('reducers.js heard LEARN');
-            let newState = Object.assign({}, state);
-            // draw N SpellCards from deck, send through socket to actor along with KEEP value
-            for (let c=0; c < action.draw; c++){
-                let drawnCard = newState.gameboard.spellDeck.topCard();
-                if (drawnCard) {
-                    newState.learnHelper.cardsDrawn.push(drawnCard);
-                } else {
-                    console.log('WARNING: Spell deck empty, could only draw '+c+' cards');
-                    break;
-                }
-            }
-            newState.learnHelper.keep = action.keep;
-            newState.history.push(action.message);
-            return newState;
-        }
+            return spells.handleLearn(state, action);
 
-        case actions.LEARN_DISCARD: {
+        case actions.LEARN_DISCARD:
             console.log('reducers.js heard LEARN_DISCARD');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            // take indices of kept cards and add to actor's spells, while nulling in learnHelper.cardsDrawn to be filtered out momentarily
-            for(let idx of action.cardIndices){
-                currentPlayer.spells.push(newState.learnHelper.cardsDrawn[idx]);
-                newState.learnHelper.cardsDrawn[idx] = null;
-            }
-            // filter nulled cards
-            newState.learnHelper.cardsDrawn = newState.learnHelper.cardsDrawn.filter((spell)=>{
-                return spell !== null;
-            });
-            // push rest of learnHelper.cardsDrawn into gameboard.spellDeck.discard
-            while(newState.learnHelper.cardsDrawn.length > 0){
-                newState.gameboard.spellDeck.discard.push(newState.learnHelper.cardsDrawn.pop());
-            }
-            newState.learnHelper.keep = null;
-            return newState;
-        }
+            return spells.handleLearnDiscard(state, action);
 
-        case actions.EXHAUST: {
+        case actions.EXHAUST:
             console.log('reducers.js heard EXHAUST');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            for(let idx of action.cardIndices){
-                newState.gameboard.spellDeck.discard.push(currentPlayer.spells[idx]);
-                currentPlayer.spells[idx] = null;
-            }
-            currentPlayer.spells = currentPlayer.spells.filter((spell)=>{
-                return spell !== null;
-            });
-            newState.history.push(action.message);
-            return newState;
-        }
+            return spells.handleExhaust(state, action);
 
-        case actions.PASSIVE: {
+        case actions.PASSIVE:
             console.log('reducers.js heard PASSIVE');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            switch(action.value){
-                case 1:
-                    currentPlayer.passives.overdrive = true;
-                    break;
-                case 2:
-                    currentPlayer.passives.hypermetabolism = true;
-                    break;
-                case 3:
-                    currentPlayer.passives.telepathy = true;
-                    break;
-                case 4:
-                    currentPlayer.passives.brilliance = true;
-                    break;
-            }
-            return newState;
-        }
+            return spells.handlePassive(state, action);
 
-        case actions.CAST_SUCCESS: {
+        case actions.CAST_SUCCESS:
             console.log('reducers.js heard CAST_SUCCESS');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            let idx = currentPlayer.spells.findIndex(spell=>spell.name==action.spell.name);
-            if (idx === -1) return state;
-            currentPlayer.spells.splice(idx, 1);
-            newState.history.push(action.message);
-            return newState;
-        }
+            return spells.handleCastSuccess(state, action);
 
-        case actions.CAST_FAIL: {
+        case actions.CAST_FAIL:
             console.log('reducers.js heard CAST_FAIL');
-            let newState = Object.assign({}, state);
-            let currentPlayer = findPlayerById(newState.players, action.actor.id);
-            let idx = currentPlayer.spells.findIndex(spell=>spell.name==action.spell.name);
-            if (idx === -1) return state;
-            currentPlayer.spells.splice(idx, 1);
-            // one more spell
-            if (currentPlayer.spells.length > 0) {
-                currentPlayer.spells.splice(Math.floor(Math.random()*currentPlayer.spells.length), 1);
-            }
-            // 1 damage
-            currentPlayer.health--;
-            newState.history.push(action.message);
-            checkDeath(currentPlayer);
-            isGameOver(newState);
-            return newState;
-        }
+            return spells.handleCastFail(state, action);
 
 
         case actions.ADD_PLAYER:
@@ -579,32 +256,9 @@ function reducer(state = initialState, action){
             let newState = Object.assign({}, state);
             let currentPlayer = newState.players[newState.currentTurn];
             // hp +- tokens
-            if (currentPlayer.hptokens > 0){
-                let counter = 0;
-                if (currentPlayer.health < 5){
-                    currentPlayer.health++;
-                    counter++;
-                }
-                currentPlayer.hptokens--;
-                if (currentPlayer.passives.hypermetabolism && currentPlayer.hptokens > 0) {
-                    if (currentPlayer.health < 5){
-                        currentPlayer.health++;
-                        counter++;
-                    }
-                    currentPlayer.hptokens--;
-                    newState.history.push(currentPlayer.name + ' consumed 2 Regen Tokens(Hypermetabolism) and heals for ' + counter + ' health');
-                } else {
-                    newState.history.push(currentPlayer.name + ' consumed 1 Regen Tokens and heals for ' + counter + ' health');
-                }
-            } else if (currentPlayer.hptokens < 0){
-                if (currentPlayer.shields > 0) {
-                    currentPlayer.shields--;
-                    currentPlayer.hptokens++;
-                } else {
-                    currentPlayer.health--;
-                    currentPlayer.hptokens++;
-                }
-                newState.history.push(currentPlayer.name + ' Burns for 1 damage');
+            let hpResult = currentPlayer.processHpTokens();
+            newState.history.push(...hpResult.messages);
+            if (hpResult.tookDamage) {
                 checkDeath(currentPlayer);
                 isGameOver(newState);
                 if (newState.gameOver) {
@@ -652,23 +306,9 @@ function reducer(state = initialState, action){
         }
 
 
-        case actions.REPLACE_ELEMENTS: {
+        case actions.REPLACE_ELEMENTS:
             console.log('reducers.js heard REPLACE_ELEMENTS');
-            let newState = Object.assign({}, state);
-            for(let idx of action.yx){
-                newState.gameboard.deck.discard.push(newState.gameboard.grid[idx[0]][idx[1]]);
-                let newCard = newState.gameboard.deck.topCard();
-                if (!newCard) {
-                    console.log('WARNING: No card to replace element at '+idx[0]+','+idx[1]);
-                    continue;
-                }
-                newState.gameboard.grid[idx[0]][idx[1]] = newCard;
-                if ((idx[0] == 1 || idx[0] == 2) && (idx[1] == 1 || idx[1] == 2)){ // if one of the four central grid positions, make card faceup by default
-                    newState.gameboard.grid[idx[0]][idx[1]].faceUp = true;
-                }
-            }
-            return newState;
-        }
+            return cards.handleReplaceElements(state, action);
 
         default:
             console.log('reducers.js is confused!')
