@@ -14,6 +14,19 @@ let wizIndex = null;
 
 module.exports = function(io){
 
+    function validateAction(payload, socket, opts = {}) {
+        const state = gameStore.getState();
+        if (!validate.isActorLegit(payload, socket, state)) return null;
+        if (opts.requireTurn && !validate.isCurrentTurnPlayer(socket, state)) return null;
+        if (opts.safeValue && !validate.isSafeValue(payload.value, opts.safeValue[0], opts.safeValue[1])) return null;
+        if (opts.requireTarget) {
+            if (!validate.isValidTarget(payload.target, state)) return null;
+            if (!validate.isPlayerAlive(payload.target, state)) return null;
+        }
+        if (opts.safeCoords && !validate.areSafeCoords(opts.safeCoords === true ? payload.yx : opts.safeCoords)) return null;
+        return state;
+    }
+
     function update(){
         console.log('sockets.js says: emitting UPDATE');
         io.emit('UPDATE', gameStore.getState());

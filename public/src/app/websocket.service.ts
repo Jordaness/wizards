@@ -249,11 +249,11 @@ export class WebsocketService {
         }
         if(this.spell && this.spell.targeted) { // multiple cast for same target
             while(this.effects.length > 0 && this.effects[0].targetPlayer){
-                this.socket.emit('CAST_EFFECT', {actor: this.actor, target, furtherEffects: [this.effects[0]]});
+                this.socket.emit('CAST_EFFECT', {actor: this.actor, target, spell: this.spell, furtherEffects: [this.effects[0]]});
                 this.effects.shift(); 
             }
         } else { // normal targeting
-            this.socket.emit('CAST_EFFECT', {actor: this.actor, target, furtherEffects: [this.effects[0]]});
+            this.socket.emit('CAST_EFFECT', {actor: this.actor, target, spell: this.spell, furtherEffects: [this.effects[0]]});
             this.effects.shift();
         }
         // Further Effects?
