@@ -363,7 +363,7 @@ export class WebsocketService {
                         this.effects.shift();
                         break;
                     default:
-                        this.socket.emit('CAST_EFFECT', {actor : this.actor, furtherEffects : [this.effects[0]]});
+                        this.socket.emit('CAST_EFFECT', {actor : this.actor, spell: this.spell, furtherEffects : [this.effects[0]]});
                         this.effects.shift();
                         this.endActionStepCheck();
                         break;

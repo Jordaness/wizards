@@ -68,13 +68,17 @@ module.exports = function(io){
             console.log(payload);
             const state = gameStore.getState();
             if (!validate.isActorLegit(payload, socket, state)) return;
+            if (state.gameOn) {
+                console.log('sockets.js says: game already started, ignoring READY');
+                return;
+            }
             gameStore.dispatch(actions.ready(payload.actor));
             let readyState = gameStore.getState();
             let allReady = readyState.players.reduce((acc, flag)=>{
                 return (acc && flag.ready);
             }, true);
             update();
-            if (allReady){
+            if (allReady && readyState.players.length >= 2){
                 io.emit('GAME_STARTED');
                 gameStore.dispatch(actions.gameStart());
                 update();
@@ -226,7 +230,10 @@ module.exports = function(io){
             const state = gameStore.getState();
             if (!validate.isActorLegit(payload, socket, state)) return;
             if (!validate.isCurrentTurnPlayer(socket, state)) return;
-            if (!validate.playerOwnsSpell(payload.actor, payload.spell.name, state)) return;
+            if (!payload.spell || !payload.spell.name) {
+                console.log('sockets.js says: CAST_EFFECT missing spell data');
+                return;
+            }
 
             // Look up effects from authoritative source — ignore payload.furtherEffects
             const spellDef = allSpells.find(s => s.name === payload.spell.name);

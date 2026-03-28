@@ -109,7 +109,13 @@ function reducer(state = initialState, action){
             newState.gameOn = true;
             for(let pl of newState.players){
                 for(let i=0; i<5; i++){
-                    pl.spells.push(newState.gameboard.spellDeck.topCard());
+                    let drawnSpell = newState.gameboard.spellDeck.topCard();
+                    if (drawnSpell) {
+                        pl.spells.push(drawnSpell);
+                    } else {
+                        console.log('WARNING: Spell deck empty during initial deal for '+pl.name);
+                        break;
+                    }
                 }
             };
             newState.history.push(action.message);
@@ -420,7 +426,13 @@ function reducer(state = initialState, action){
             newState = Object.assign({}, state);
             // draw N SpellCards from deck, send through socket to actor along with KEEP value
             for (let c=0; c < action.draw; c++){
-                newState.learnHelper.cardsDrawn.push(newState.gameboard.spellDeck.topCard());
+                let drawnCard = newState.gameboard.spellDeck.topCard();
+                if (drawnCard) {
+                    newState.learnHelper.cardsDrawn.push(drawnCard);
+                } else {
+                    console.log('WARNING: Spell deck empty, could only draw '+c+' cards');
+                    break;
+                }
             }
             newState.learnHelper.keep = action.keep;
             newState.history.push(action.message);
@@ -539,8 +551,20 @@ function reducer(state = initialState, action){
         case actions.REMOVE_PLAYER:
             console.log('reducers.js heard REMOVE_PLAYER');
             newState = Object.assign({}, state);
-            idx = newState.players.indexOf(action.player);
+            idx = newState.players.findIndex(p => p.id === action.player.id);
+            if (idx === -1) {
+                console.log('WARNING: Could not find player to remove');
+                return state;
+            }
             newState.players = newState.players.slice(0,idx).concat(newState.players.slice(idx+1));
+            // adjust currentTurn if needed
+            if (newState.currentTurn !== null && newState.players.length > 0) {
+                if (idx < newState.currentTurn) {
+                    newState.currentTurn--;
+                } else if (idx === newState.currentTurn) {
+                    newState.currentTurn = newState.currentTurn % newState.players.length;
+                }
+            }
             newState.history = [... state.history, action.message]
             return newState;
 
@@ -549,7 +573,11 @@ function reducer(state = initialState, action){
 
         case actions.GAME_RESET:
             console.log('reducers.js heard GAME_RESET');
-            newState = Object.assign({}, initialState);
+            newState = Object.assign({}, initialState, {
+                history: [],
+                learnHelper: {keep: null, cardsDrawn: []},
+                highlight: [],
+            });
             // reinitializing the gameboard
             let eleDeck = new Deck();
             eleDeck.initializeAsElementDeck();
@@ -616,6 +644,9 @@ function reducer(state = initialState, action){
                 newState.history.push(currentPlayer.name + ' Burns for 1 damage');
                 checkDeath(currentPlayer);
                 isGameOver(newState);
+                if (newState.gameOver) {
+                    return newState;
+                }
             }
             // advance state.currentTurn to next living player
             let nextTurn = (newState.currentTurn + 1) % newState.players.length;
@@ -665,7 +696,12 @@ function reducer(state = initialState, action){
             newState = Object.assign({}, state);
             for(idx of action.yx){
                 newState.gameboard.deck.discard.push(newState.gameboard.grid[idx[0]][idx[1]]);
-                newState.gameboard.grid[idx[0]][idx[1]] = newState.gameboard.deck.topCard();
+                let newCard = newState.gameboard.deck.topCard();
+                if (!newCard) {
+                    console.log('WARNING: No card to replace element at '+idx[0]+','+idx[1]);
+                    continue;
+                }
+                newState.gameboard.grid[idx[0]][idx[1]] = newCard;
                 if ((idx[0] == 1 || idx[0] == 2) && (idx[1] == 1 || idx[1] == 2)){ // if one of the four central grid positions, make card faceup by default
                     newState.gameboard.grid[idx[0]][idx[1]].faceUp = true;
                 }
