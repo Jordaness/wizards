@@ -8,90 +8,111 @@ function makePlayer(overrides = {}) {
     }, overrides);
 }
 
-// findPlayerById
-console.log('--- findPlayerById ---');
-let players = [makePlayer({ id: 1 }), makePlayer({ id: 2, name: 'Wizard2' })];
-let found = findPlayerById(players, 2);
-console.assert(found.name === 'Wizard2', 'should find player by id');
-let notFound = findPlayerById(players, 99);
-console.assert(notFound === undefined, 'should return undefined for missing id');
+describe('findPlayerById', () => {
+    test('should find player by id', () => {
+        const players = [makePlayer({ id: 1 }), makePlayer({ id: 2, name: 'Wizard2' })];
+        expect(findPlayerById(players, 2).name).toBe('Wizard2');
+    });
 
-// applyDamage — no shields
-console.log('--- applyDamage ---');
-let p1 = makePlayer({ health: 5, shields: 0 });
-applyDamage(p1, 3);
-console.assert(p1.health === 2, 'should deal 3 damage, health=2, got ' + p1.health);
-console.assert(p1.shields === 0, 'shields should stay 0');
+    test('should return undefined for missing id', () => {
+        const players = [makePlayer({ id: 1 })];
+        expect(findPlayerById(players, 99)).toBeUndefined();
+    });
+});
 
-// applyDamage — with shields
-let p2 = makePlayer({ health: 5, shields: 2 });
-applyDamage(p2, 3);
-console.assert(p2.shields === 0, 'shields should be 0 after absorbing, got ' + p2.shields);
-console.assert(p2.health === 4, 'should deal 1 damage after shields, health=4, got ' + p2.health);
+describe('applyDamage', () => {
+    test('should deal full damage with no shields', () => {
+        const p = makePlayer({ health: 5, shields: 0 });
+        applyDamage(p, 3);
+        expect(p.health).toBe(2);
+        expect(p.shields).toBe(0);
+    });
 
-// applyDamage — shields absorb all
-let p3 = makePlayer({ health: 5, shields: 5 });
-applyDamage(p3, 3);
-console.assert(p3.shields === 2, 'shields should be 2, got ' + p3.shields);
-console.assert(p3.health === 5, 'health should be 5, got ' + p3.health);
+    test('should absorb partial damage with shields', () => {
+        const p = makePlayer({ health: 5, shields: 2 });
+        applyDamage(p, 3);
+        expect(p.shields).toBe(0);
+        expect(p.health).toBe(4);
+    });
 
-// checkDeath — alive
-console.log('--- checkDeath ---');
-let alive = makePlayer({ health: 1 });
-let died = checkDeath(alive);
-console.assert(died === false, 'should not be dead');
-console.assert(alive.isGhost === false, 'should not be ghost');
+    test('should absorb all damage when shields exceed damage', () => {
+        const p = makePlayer({ health: 5, shields: 5 });
+        applyDamage(p, 3);
+        expect(p.shields).toBe(2);
+        expect(p.health).toBe(5);
+    });
+});
 
-// checkDeath — dead
-let dead = makePlayer({ health: 0, shields: 3, aptokens: 2, hptokens: 2 });
-dead.passives.brilliance = true;
-died = checkDeath(dead);
-console.assert(died === true, 'should be dead');
-console.assert(dead.isGhost === true, 'should be ghost');
-console.assert(dead.shields === 0, 'shields should be cleared');
-console.assert(dead.aptokens === 0, 'aptokens should be cleared');
-console.assert(dead.hptokens === 0, 'hptokens should be cleared');
-console.assert(dead.passives.brilliance === false, 'passives should be cleared');
+describe('checkDeath', () => {
+    test('should not mark alive player as dead', () => {
+        const p = makePlayer({ health: 1 });
+        expect(checkDeath(p)).toBe(false);
+        expect(p.isGhost).toBe(false);
+    });
 
-// isGameOver — not over
-console.log('--- isGameOver ---');
-let state1 = { players: [makePlayer(), makePlayer({ id: 2 })], history: [] };
-isGameOver(state1);
-console.assert(state1.gameOver !== true, 'game should not be over with 2 alive');
+    test('should mark dead player as ghost and clear stats', () => {
+        const p = makePlayer({ health: 0, shields: 3, aptokens: 2, hptokens: 2 });
+        p.passives.brilliance = true;
+        expect(checkDeath(p)).toBe(true);
+        expect(p.isGhost).toBe(true);
+        expect(p.shields).toBe(0);
+        expect(p.aptokens).toBe(0);
+        expect(p.hptokens).toBe(0);
+        expect(p.passives.brilliance).toBe(false);
+    });
+});
 
-// isGameOver — over
-let state2 = {
-    players: [makePlayer(), makePlayer({ id: 2, health: 0, isGhost: true })],
-    gameOn: true, gameOver: false, winner: null, history: []
-};
-isGameOver(state2);
-console.assert(state2.gameOver === true, 'game should be over');
-console.assert(state2.winner.id === 1, 'winner should be player 1');
+describe('isGameOver', () => {
+    test('should not end game with 2 alive players', () => {
+        const state = { players: [makePlayer(), makePlayer({ id: 2 })], history: [] };
+        isGameOver(state);
+        expect(state.gameOver).not.toBe(true);
+    });
 
-// shuffle — same length
-console.log('--- shuffle ---');
-let arr = [1, 2, 3, 4, 5];
-shuffle(arr);
-console.assert(arr.length === 5, 'shuffle should preserve length');
+    test('should end game with 1 alive player', () => {
+        const state = {
+            players: [makePlayer(), makePlayer({ id: 2, health: 0, isGhost: true })],
+            gameOn: true, gameOver: false, winner: null, history: []
+        };
+        isGameOver(state);
+        expect(state.gameOver).toBe(true);
+        expect(state.winner.id).toBe(1);
+    });
+});
 
-// sanitizeState — strips deck internals
-console.log('--- sanitizeState ---');
-let fakeState = {
-    gameboard: {
-        grid: [[{elem: 'fire', faceUp: true}]],
-        deck: { cards: [1, 2, 3], discard: [] },
-        spellDeck: { cards: [1, 2], discard: [] }
-    },
-    players: [], history: []
-};
-let clean = sanitizeState(fakeState);
-console.assert(clean.gameboard.deck.remaining === 3, 'deck remaining should be 3, got ' + clean.gameboard.deck.remaining);
-console.assert(clean.gameboard.spellDeck.remaining === 2, 'spellDeck remaining should be 2');
-console.assert(clean.gameboard.deck.cards === undefined, 'deck cards should be stripped');
-console.assert(clean.gameboard.grid === fakeState.gameboard.grid, 'grid should be preserved');
+describe('shuffle', () => {
+    test('should preserve array length', () => {
+        const arr = [1, 2, 3, 4, 5];
+        shuffle(arr);
+        expect(arr).toHaveLength(5);
+    });
 
-// sanitizeState — null gameboard
-let cleanNull = sanitizeState({ players: [], history: [] });
-console.assert(cleanNull.gameboard === undefined, 'should handle null gameboard');
+    test('should contain same elements', () => {
+        const arr = [1, 2, 3, 4, 5];
+        shuffle(arr);
+        expect(arr.sort()).toEqual([1, 2, 3, 4, 5]);
+    });
+});
 
-console.log('--- helpers tests complete ---');
+describe('sanitizeState', () => {
+    test('should strip deck internals', () => {
+        const state = {
+            gameboard: {
+                grid: [[{ elem: 'fire', faceUp: true }]],
+                deck: { cards: [1, 2, 3], discard: [] },
+                spellDeck: { cards: [1, 2], discard: [] }
+            },
+            players: [], history: []
+        };
+        const clean = sanitizeState(state);
+        expect(clean.gameboard.deck.remaining).toBe(3);
+        expect(clean.gameboard.spellDeck.remaining).toBe(2);
+        expect(clean.gameboard.deck.cards).toBeUndefined();
+        expect(clean.gameboard.grid).toBe(state.gameboard.grid);
+    });
+
+    test('should handle null gameboard', () => {
+        const clean = sanitizeState({ players: [], history: [] });
+        expect(clean.gameboard).toBeUndefined();
+    });
+});

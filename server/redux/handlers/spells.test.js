@@ -30,66 +30,99 @@ function makeState(players, spellDeckCards) {
     };
 }
 
-// LEARN
-console.log('--- handleLearn ---');
-let s1 = makeState([makePlayer()], [{ name: 'S1' }, { name: 'S2' }, { name: 'S3' }, { name: 'S4' }]);
-let r1 = handleLearn(s1, { draw: 3, keep: 1, message: 'learn msg' });
-console.assert(r1.learnHelper.cardsDrawn.length === 3, 'should draw 3, got ' + r1.learnHelper.cardsDrawn.length);
-console.assert(r1.learnHelper.keep === 1, 'keep should be 1');
+describe('handleLearn', () => {
+    test('should draw cards from spell deck', () => {
+        const s = makeState([makePlayer()], [{ name: 'S1' }, { name: 'S2' }, { name: 'S3' }, { name: 'S4' }]);
+        const r = handleLearn(s, { draw: 3, keep: 1, message: 'learn msg' });
+        expect(r.learnHelper.cardsDrawn).toHaveLength(3);
+        expect(r.learnHelper.keep).toBe(1);
+    });
 
-// LEARN — empty deck
-let s2 = makeState([makePlayer()], []);
-let r2 = handleLearn(s2, { draw: 3, keep: 1, message: 'learn msg' });
-console.assert(r2.learnHelper.cardsDrawn.length === 0, 'should draw 0 from empty deck');
+    test('should handle empty deck gracefully', () => {
+        const s = makeState([makePlayer()], []);
+        const r = handleLearn(s, { draw: 3, keep: 1, message: 'learn msg' });
+        expect(r.learnHelper.cardsDrawn).toHaveLength(0);
+    });
+});
 
-// LEARN_DISCARD
-console.log('--- handleLearnDiscard ---');
-let s3 = makeState([makePlayer({ id: 1 })], []);
-s3.learnHelper.cardsDrawn = [{ name: 'A' }, { name: 'B' }, { name: 'C' }];
-s3.learnHelper.keep = 1;
-let r3 = handleLearnDiscard(s3, { actor: { id: 1 }, cardIndices: [1] });
-console.assert(r3.players[0].spells.length === 1, 'should have 1 spell, got ' + r3.players[0].spells.length);
-console.assert(r3.players[0].spells[0].name === 'B', 'should keep spell B');
-console.assert(r3.learnHelper.keep === null, 'keep should be null');
-console.assert(r3.gameboard.spellDeck.discard.length === 2, 'should discard 2, got ' + r3.gameboard.spellDeck.discard.length);
+describe('handleLearnDiscard', () => {
+    test('should keep selected cards and discard the rest', () => {
+        const s = makeState([makePlayer({ id: 1 })], []);
+        s.learnHelper.cardsDrawn = [{ name: 'A' }, { name: 'B' }, { name: 'C' }];
+        s.learnHelper.keep = 1;
+        const r = handleLearnDiscard(s, { actor: { id: 1 }, cardIndices: [1] });
+        expect(r.players[0].spells).toHaveLength(1);
+        expect(r.players[0].spells[0].name).toBe('B');
+        expect(r.learnHelper.keep).toBeNull();
+        expect(r.gameboard.spellDeck.discard).toHaveLength(2);
+    });
+});
 
-// EXHAUST
-console.log('--- handleExhaust ---');
-let s4 = makeState([makePlayer({ id: 1, spells: [{ name: 'X' }, { name: 'Y' }, { name: 'Z' }] })], []);
-let r4 = handleExhaust(s4, { actor: { id: 1 }, cardIndices: [0, 2], message: 'exhaust msg' });
-console.assert(r4.players[0].spells.length === 1, 'should have 1 spell left, got ' + r4.players[0].spells.length);
-console.assert(r4.players[0].spells[0].name === 'Y', 'should keep Y');
-console.assert(r4.gameboard.spellDeck.discard.length === 2, 'should discard 2');
+describe('handleExhaust', () => {
+    test('should remove selected spells and discard them', () => {
+        const s = makeState([makePlayer({ id: 1, spells: [{ name: 'X' }, { name: 'Y' }, { name: 'Z' }] })], []);
+        const r = handleExhaust(s, { actor: { id: 1 }, cardIndices: [0, 2], message: 'exhaust msg' });
+        expect(r.players[0].spells).toHaveLength(1);
+        expect(r.players[0].spells[0].name).toBe('Y');
+        expect(r.gameboard.spellDeck.discard).toHaveLength(2);
+    });
+});
 
-// PASSIVE
-console.log('--- handlePassive ---');
-let s5 = makeState([makePlayer({ id: 1 })]);
-let r5 = handlePassive(s5, { actor: { id: 1 }, value: 1 });
-console.assert(r5.players[0].passives.overdrive === true, 'overdrive should be true');
-let r5b = handlePassive(s5, { actor: { id: 1 }, value: 3 });
-console.assert(r5b.players[0].passives.telepathy === true, 'telepathy should be true');
+describe('handlePassive', () => {
+    test('should enable overdrive', () => {
+        const s = makeState([makePlayer({ id: 1 })]);
+        const r = handlePassive(s, { actor: { id: 1 }, value: 1 });
+        expect(r.players[0].passives.overdrive).toBe(true);
+    });
 
-// CAST_SUCCESS
-console.log('--- handleCastSuccess ---');
-let s6 = makeState([makePlayer({ id: 1, spells: [{ name: 'Fireball' }, { name: 'Heal' }] })]);
-let r6 = handleCastSuccess(s6, { actor: { id: 1 }, spell: { name: 'Fireball' }, message: 'cast msg' });
-console.assert(r6.players[0].spells.length === 1, 'should have 1 spell, got ' + r6.players[0].spells.length);
-console.assert(r6.players[0].spells[0].name === 'Heal', 'should keep Heal');
+    test('should enable telepathy', () => {
+        const s = makeState([makePlayer({ id: 1 })]);
+        const r = handlePassive(s, { actor: { id: 1 }, value: 3 });
+        expect(r.players[0].passives.telepathy).toBe(true);
+    });
 
-// CAST_SUCCESS — spell not found
-let s7 = makeState([makePlayer({ id: 1, spells: [{ name: 'Heal' }] })]);
-let r7 = handleCastSuccess(s7, { actor: { id: 1 }, spell: { name: 'Missing' }, message: 'cast msg' });
-console.assert(r7 === s7, 'should return original state if spell not found');
+    test('should enable hypermetabolism', () => {
+        const s = makeState([makePlayer({ id: 1 })]);
+        const r = handlePassive(s, { actor: { id: 1 }, value: 2 });
+        expect(r.players[0].passives.hypermetabolism).toBe(true);
+    });
 
-// CAST_FAIL
-console.log('--- handleCastFail ---');
-let s8 = makeState([
-    makePlayer({ id: 1, spells: [{ name: 'Fireball' }, { name: 'Heal' }, { name: 'Shield' }] }),
-    makePlayer({ id: 2 })
-]);
-let r8 = handleCastFail(s8, { actor: { id: 1 }, spell: { name: 'Fireball' }, message: 'fail msg' });
-console.assert(r8.players[0].health === 4, 'should take 1 damage, got ' + r8.players[0].health);
-// Cast fail removes the spell + 1 random additional spell
-console.assert(r8.players[0].spells.length === 1, 'should have 1 spell left, got ' + r8.players[0].spells.length);
+    test('should enable brilliance', () => {
+        const s = makeState([makePlayer({ id: 1 })]);
+        const r = handlePassive(s, { actor: { id: 1 }, value: 4 });
+        expect(r.players[0].passives.brilliance).toBe(true);
+    });
+});
 
-console.log('--- spells tests complete ---');
+describe('handleCastSuccess', () => {
+    test('should remove cast spell from hand', () => {
+        const s = makeState([makePlayer({ id: 1, spells: [{ name: 'Fireball' }, { name: 'Heal' }] })]);
+        const r = handleCastSuccess(s, { actor: { id: 1 }, spell: { name: 'Fireball' }, message: 'cast msg' });
+        expect(r.players[0].spells).toHaveLength(1);
+        expect(r.players[0].spells[0].name).toBe('Heal');
+    });
+
+    test('should return original state if spell not found', () => {
+        const s = makeState([makePlayer({ id: 1, spells: [{ name: 'Heal' }] })]);
+        const r = handleCastSuccess(s, { actor: { id: 1 }, spell: { name: 'Missing' }, message: 'cast msg' });
+        expect(r).toBe(s);
+    });
+});
+
+describe('handleCastFail', () => {
+    test('should remove spell, destroy another, and deal 1 damage', () => {
+        const s = makeState([
+            makePlayer({ id: 1, spells: [{ name: 'Fireball' }, { name: 'Heal' }, { name: 'Shield' }] }),
+            makePlayer({ id: 2 })
+        ]);
+        const r = handleCastFail(s, { actor: { id: 1 }, spell: { name: 'Fireball' }, message: 'fail msg' });
+        expect(r.players[0].health).toBe(4);
+        expect(r.players[0].spells).toHaveLength(1);
+    });
+
+    test('should return original state if spell not found', () => {
+        const s = makeState([makePlayer({ id: 1, spells: [{ name: 'Heal' }] }), makePlayer({ id: 2 })]);
+        const r = handleCastFail(s, { actor: { id: 1 }, spell: { name: 'Missing' }, message: 'fail msg' });
+        expect(r).toBe(s);
+    });
+});

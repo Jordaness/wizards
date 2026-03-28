@@ -1,4 +1,4 @@
-const { handleDivine, handleUnhighlight, handleWeave, handleScry, handleObscure } = require('./cards');
+const { handleDivine, handleUnhighlight, handleWeave, handleScry, handleObscure, handleReplaceElements } = require('./cards');
 
 function makeGrid() {
     return [
@@ -9,46 +9,93 @@ function makeGrid() {
     ];
 }
 
-function makeState() {
-    return { gameboard: { grid: makeGrid() }, history: [], highlight: [] };
+function makeDeck(cards) {
+    return {
+        cards: cards || [],
+        discard: [],
+        topCard() {
+            if (this.cards.length === 0) return null;
+            return this.cards.pop();
+        }
+    };
 }
 
-// DIVINE
-console.log('--- handleDivine ---');
-let s1 = makeState();
-let r1 = handleDivine(s1, { yx: [[0, 0], [0, 1]], message: 'divine msg' });
-console.assert(r1.highlight.length === 2, 'should highlight 2 cards');
-console.assert(r1.history.includes('divine msg'), 'should have message');
+function makeState(deckCards) {
+    return {
+        gameboard: { grid: makeGrid(), deck: makeDeck(deckCards) },
+        history: [], highlight: []
+    };
+}
 
-// UNHIGHLIGHT
-console.log('--- handleUnhighlight ---');
-let s2 = makeState();
-s2.highlight = [[0, 0]];
-let r2 = handleUnhighlight(s2, {});
-console.assert(r2.highlight.length === 0, 'should clear highlights');
+describe('handleDivine', () => {
+    test('should highlight cards and add message', () => {
+        const s = makeState();
+        const r = handleDivine(s, { yx: [[0, 0], [0, 1]], message: 'divine msg' });
+        expect(r.highlight).toHaveLength(2);
+        expect(r.history).toContain('divine msg');
+    });
+});
 
-// WEAVE
-console.log('--- handleWeave ---');
-let s3 = makeState();
-let origElem00 = s3.gameboard.grid[0][0].elem;
-let origElem33 = s3.gameboard.grid[3][3].elem;
-let r3 = handleWeave(s3, { yx1: [0, 0], yx2: [3, 3], message: 'weave msg' });
-console.assert(r3.gameboard.grid[0][0].elem === origElem33, 'should swap, got ' + r3.gameboard.grid[0][0].elem);
-console.assert(r3.gameboard.grid[3][3].elem === origElem00, 'should swap, got ' + r3.gameboard.grid[3][3].elem);
+describe('handleUnhighlight', () => {
+    test('should clear highlights', () => {
+        const s = makeState();
+        s.highlight = [[0, 0]];
+        const r = handleUnhighlight(s, {});
+        expect(r.highlight).toHaveLength(0);
+    });
+});
 
-// SCRY
-console.log('--- handleScry ---');
-let s4 = makeState();
-console.assert(s4.gameboard.grid[0][0].faceUp === false, 'should start face down');
-let r4 = handleScry(s4, { yx: [[0, 0], [3, 3]], message: 'scry msg' });
-console.assert(r4.gameboard.grid[0][0].faceUp === true, 'should be face up after scry');
-console.assert(r4.gameboard.grid[3][3].faceUp === true, 'should be face up after scry');
+describe('handleWeave', () => {
+    test('should swap two cards on the grid', () => {
+        const s = makeState();
+        const origElem00 = s.gameboard.grid[0][0].elem;
+        const origElem33 = s.gameboard.grid[3][3].elem;
+        const r = handleWeave(s, { yx1: [0, 0], yx2: [3, 3], message: 'weave msg' });
+        expect(r.gameboard.grid[0][0].elem).toBe(origElem33);
+        expect(r.gameboard.grid[3][3].elem).toBe(origElem00);
+    });
+});
 
-// OBSCURE
-console.log('--- handleObscure ---');
-let s5 = makeState();
-s5.gameboard.grid[1][1].faceUp = true;
-let r5 = handleObscure(s5, { yx: [[1, 1]], message: 'obscure msg' });
-console.assert(r5.gameboard.grid[1][1].faceUp === false, 'should be face down after obscure');
+describe('handleScry', () => {
+    test('should set cards face up', () => {
+        const s = makeState();
+        expect(s.gameboard.grid[0][0].faceUp).toBe(false);
+        const r = handleScry(s, { yx: [[0, 0], [3, 3]], message: 'scry msg' });
+        expect(r.gameboard.grid[0][0].faceUp).toBe(true);
+        expect(r.gameboard.grid[3][3].faceUp).toBe(true);
+    });
+});
 
-console.log('--- cards tests complete ---');
+describe('handleObscure', () => {
+    test('should set cards face down', () => {
+        const s = makeState();
+        s.gameboard.grid[1][1].faceUp = true;
+        const r = handleObscure(s, { yx: [[1, 1]], message: 'obscure msg' });
+        expect(r.gameboard.grid[1][1].faceUp).toBe(false);
+    });
+});
+
+describe('handleReplaceElements', () => {
+    test('should replace grid cards from deck', () => {
+        const newCard = { elem: 'aether', faceUp: false };
+        const s = makeState([newCard]);
+        const oldCard = s.gameboard.grid[0][0];
+        const r = handleReplaceElements(s, { yx: [[0, 0]] });
+        expect(r.gameboard.grid[0][0].elem).toBe('aether');
+        expect(r.gameboard.deck.discard).toContain(oldCard);
+    });
+
+    test('should set central cards face up', () => {
+        const newCard = { elem: 'aether', faceUp: false };
+        const s = makeState([newCard]);
+        const r = handleReplaceElements(s, { yx: [[1, 1]] });
+        expect(r.gameboard.grid[1][1].faceUp).toBe(true);
+    });
+
+    test('should skip replacement when deck is empty', () => {
+        const s = makeState([]);
+        const origCard = s.gameboard.grid[0][0];
+        const r = handleReplaceElements(s, { yx: [[0, 0]] });
+        expect(r.gameboard.grid[0][0]).toBe(origCard);
+    });
+});
