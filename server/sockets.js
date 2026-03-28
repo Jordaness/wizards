@@ -1,5 +1,7 @@
 const gameStore = require('./redux/store');
 const actions = require('./redux/actions');
+const validate = require('./validate');
+const allSpells = require('./allspells');
 
 const cloner = require('cloner');
 
@@ -64,6 +66,8 @@ module.exports = function(io){
         socket.on(actions.READY, (payload)=>{
             console.log('sockets.js says: heard READY');
             console.log(payload);
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
             gameStore.dispatch(actions.ready(payload.actor));
             let readyState = gameStore.getState();
             let allReady = readyState.players.reduce((acc, flag)=>{
@@ -84,7 +88,9 @@ module.exports = function(io){
 
         socket.on(actions.TURN_ACK, (payload)=>{
             console.log('sockets.js says: heard TURN_ACK');
-            currentPlayer = gameStore.getState().players.find((player)=>{
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            currentPlayer = state.players.find((player)=>{
                 return player.id == payload.actor.id;
             })
             // if current player is dead, go for ghost mode!
@@ -113,12 +119,22 @@ module.exports = function(io){
 
         socket.on(actions.DIVINE_STEP, (payload)=>{
             console.log('sockets.js says: heard DIVINE_STEP');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.areSafeCoords(payload.yx)) return;
+            const actingPlayer = state.players[state.currentTurn];
+            const allowedDivineCount = actingPlayer.passives.telepathy ? 3 : 2;
+            if (payload.yx.length > allowedDivineCount) return;
+            for (const c of payload.yx) {
+                if (state.gameboard.grid[c[0]][c[1]].faceUp === true) return;
+            }
             gameStore.dispatch(actions.divine(payload.actor, payload.value, payload.yx))
             // regular state with HIGHLIGHT data
             socket.broadcast.emit('UPDATE', gameStore.getState());
             // super secret state with divined cards faceUp = true
             let ephemeral = cloner.deep.copy(gameStore.getState());
-            for(c of payload.yx){
+            for (const c of payload.yx){
                 ephemeral.gameboard.grid[c[0]][c[1]].faceUp = true;
             }
             socket.emit('UPDATE', ephemeral);
@@ -129,6 +145,7 @@ module.exports = function(io){
 
         socket.on(actions.DIVINE_STEP_END, ()=>{
             console.log('sockets.js says: heard DIVINE_STEP_END');
+            if (!validate.isCurrentTurnPlayer(socket, gameStore.getState())) return;
             gameStore.dispatch(actions.unhighlight());
             update();
             socket.emit('ACTION_STEP_START');
@@ -150,6 +167,9 @@ module.exports = function(io){
 
         socket.on(actions.ACTION_STEP_END, (payload)=>{
             console.log('sockets.js says: heard ACTION_STEP_END');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
             actOrDont(payload.actor, socket);
         });
 
@@ -159,6 +179,9 @@ module.exports = function(io){
 
         socket.on(actions.TURN_END, (payload)=>{
             console.log('sockets.js says: heard TURN_END');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
             gameStore.dispatch(actions.turnEnd());
             update();
             io.emit('TURN_START');
@@ -168,6 +191,10 @@ module.exports = function(io){
 
 
         socket.on(actions.REPLACE_ELEMENTS, (payload)=>{
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.areSafeCoords(payload.cards)) return;
             gameStore.dispatch(actions.replaceElements(payload.actor, payload.cards));
             update();
         });
@@ -181,6 +208,10 @@ module.exports = function(io){
 
         socket.on(actions.CAST_SUCCESS, (payload)=>{
             console.log('sockets.js says: heard CAST_SUCCESS: '+payload.spell.name);
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.playerOwnsSpell(payload.actor, payload.spell.name, state)) return;
             gameStore.dispatch(actions.castSuccess(payload.actor, payload.spell));
             update();
         });
@@ -188,88 +219,83 @@ module.exports = function(io){
 
         socket.on(actions.CAST_EFFECT, (payload)=>{
             console.log('sockets.js says: heard CAST_EFFECT');
-            // handle payload.furtherEffects
-            console.log(payload.furtherEffects);
-            for(let fx in payload.furtherEffects){   
-                console.log(payload.furtherEffects[fx]);
-                switch(payload.furtherEffects[fx].type){
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.playerOwnsSpell(payload.actor, payload.spell.name, state)) return;
+
+            // Look up effects from authoritative source — ignore payload.furtherEffects
+            const spellDef = allSpells.find(s => s.name === payload.spell.name);
+            if (!spellDef) return;
+
+            for (const fx of spellDef.effects) {
+                console.log('case '+fx.type);
+                switch(fx.type){
 
                     case actions.ATTACK:
-                        console.log('case ATTACK');
-                        gameStore.dispatch(actions.attack(payload.actor, payload.target, payload.furtherEffects[fx].value));
+                        if (!validate.isValidTarget(payload.target, state)) break;
+                        gameStore.dispatch(actions.attack(payload.actor, payload.target, fx.value));
                         break;
 
                     case actions.ATTACK_ALL:
-                        console.log('case ATTACK_ALL');
-                        gameStore.dispatch(actions.attackAll(payload.actor, payload.furtherEffects[fx].value));
+                        gameStore.dispatch(actions.attackAll(payload.actor, fx.value));
                         break;
 
-                    case actions.DRAIN: 
-                        console.log('case DRAIN');
-                        gameStore.dispatch(actions.drain(payload.actor, payload.target, payload.furtherEffects[fx].value));
+                    case actions.DRAIN:
+                        if (!validate.isValidTarget(payload.target, state)) break;
+                        gameStore.dispatch(actions.drain(payload.actor, payload.target, fx.value));
                         break;
 
-                    case actions.CURE: 
-                        console.log('case CURE');
-                        gameStore.dispatch(actions.cure(payload.actor, payload.furtherEffects[fx].value));
+                    case actions.CURE:
+                        gameStore.dispatch(actions.cure(payload.actor, fx.value));
                         break;
 
-                    case actions.SHIELD: 
-                        console.log('case SHIELD');
-                        gameStore.dispatch(actions.shield(payload.actor, payload.furtherEffects[fx].value));
+                    case actions.SHIELD:
+                        gameStore.dispatch(actions.shield(payload.actor, fx.value));
                         break;
 
-                    case actions.AP_PLUS: 
-                        console.log('case AP_PLUS');
-                        gameStore.dispatch(actions.apPlus(payload.actor, payload.furtherEffects[fx].value));
+                    case actions.AP_PLUS:
+                        gameStore.dispatch(actions.apPlus(payload.actor, fx.value));
                         break;
 
-                    case actions.AP_MINUS: 
-                        console.log('case AP_MINUS');
-                        gameStore.dispatch(actions.apMinus(payload.actor, payload.target, payload.furtherEffects[fx].value, payload.furtherEffects[fx].targetPlayer, payload.furtherEffects[fx].limited));
+                    case actions.AP_MINUS:
+                        gameStore.dispatch(actions.apMinus(payload.actor, payload.target, fx.value, fx.targetPlayer, fx.limited));
                         break;
 
-                    case actions.HP_PLUS: 
-                        console.log('case HP_PLUS');
-                        gameStore.dispatch(actions.hpPlus(payload.actor, payload.furtherEffects[fx].value));
+                    case actions.HP_PLUS:
+                        gameStore.dispatch(actions.hpPlus(payload.actor, fx.value));
                         break;
 
-                    case actions.HP_MINUS: 
-                        console.log('case HP_MINUS');
-                        gameStore.dispatch(actions.hpMinus(payload.actor, payload.target, payload.furtherEffects[fx].value, payload.furtherEffects[fx].targetPlayer, payload.furtherEffects[fx].limited, payload.furtherEffects[fx].magnitize));
+                    case actions.HP_MINUS:
+                        gameStore.dispatch(actions.hpMinus(payload.actor, payload.target, fx.value, fx.targetPlayer, fx.limited, fx.magnitize));
                         break;
 
-                    case actions.OBSCURE: 
-                        console.log('case OBSCURE');
-                        gameStore.dispatch(actions.obscure(payload.actor, payload.yx));
+                    case actions.OBSCURE:
+                        if (!validate.areSafeCoords(payload.yx)) break;
+                        if (payload.yx.length > fx.value) break;
+                        gameStore.dispatch(actions.obscure(payload.actor, fx.value, payload.yx));
                         break;
 
                     case actions.PASSIVE:
-                        console.log('case PASSIVE');
-                        gameStore.dispatch(actions.passive(payload.actor, payload.furtherEffects[fx].value));
+                        gameStore.dispatch(actions.passive(payload.actor, fx.value));
                         break;
 
-                    // more things
+                    case actions.DIVINE:
+                        socket.emit('DIVINE_STEP_START', { value: fx.value });
+                        break;
 
-            }}
+                }
+            }
             update();
-
-
-                // THIS IS CRAP, DON'T ACTUALLY USE THIS
-                // if(spell.effects[0].targetPlayer == true){
-                //     // remove first effect, send TARGET_PLAYER
-                //     let furtherEffects = spell.effects.slice(1);
-                //     socket.emit('TARGET_PLAYER', {furtherEffects})
-                // } else if (spell.effects[0].targetCards == true){
-                //     // remove first effect, send TARGET_CARDS
-                //     let effectValue = spell.effects[0].value;
-                //     let furtherEffects = spell.effects.slice(1);
-                //     socket.emit('TARGET_CARDS', {furtherEffects, value: effectValue});
         });
 
 
         socket.on(actions.CAST_FAIL, (payload)=>{
             console.log('sockets.js says: heard CAST_FAIL: '+payload.spell.name);
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.playerOwnsSpell(payload.actor, payload.spell.name, state)) return;
             gameStore.dispatch(actions.castFail(payload.actor, payload.spell));
             endSpell(socket);
             // send some kinda event
@@ -284,48 +310,83 @@ module.exports = function(io){
 
         socket.on(actions.ATTACK, (payload)=>{
             console.log('sockets.js says: heard ATTACK');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
+            if (!validate.isValidTarget(payload.target, state)) return;
             gameStore.dispatch(actions.attack(payload.actor, payload.target, payload.value));
             update();
         });
 
         socket.on(actions.ATTACK_ALL, (payload)=>{
             console.log('sockets.js says: heard ATTACK_ALL');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
             gameStore.dispatch(actions.attackAll(payload.actor, payload.value));
             update();
         })
 
         socket.on(actions.CURE, (payload)=>{
             console.log('sockets.js says: heard CURE');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
             gameStore.dispatch(actions.cure(payload.actor, payload.value));
             update();
         });
 
         socket.on(actions.SHIELD, (payload)=>{
             console.log('sockets.js says: heard SHIELD');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
             gameStore.dispatch(actions.shield(payload.actor, payload.value));
             update();
         });
 
         socket.on(actions.HP_PLUS, (payload)=>{
             console.log('sockets.js says: heard HP_PLUS');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
             gameStore.dispatch(actions.hpPlus(payload.actor, payload.value));
             update();
-        });        
+        });
 
         socket.on(actions.HP_MINUS, (payload)=>{
             console.log('sockets.js says: heard HP_MINUS');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
+            if (!validate.isValidTarget(payload.target, state)) return;
             gameStore.dispatch(actions.hpMinus(payload.actor, payload.target, payload.value));
             update();
         });
 
         socket.on(actions.AP_PLUS, (payload)=>{
             console.log('sockets.js says: heard AP_PLUS');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
             gameStore.dispatch(actions.apPlus(payload.actor, payload.value));
             update();
         });
 
         socket.on(actions.AP_MINUS, (payload)=>{
             console.log('sockets.js says: heard AP_MINUS');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.isSafeValue(payload.value, 1, 10)) return;
+            if (!validate.isValidTarget(payload.target, state)) return;
             gameStore.dispatch(actions.apMinus(payload.actor, payload.target, payload.value));
             update();
         });
@@ -334,12 +395,22 @@ module.exports = function(io){
 
         socket.on(actions.DIVINE, (payload)=>{
             console.log('sockets.js says: heard DIVINE');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.areSafeCoords(payload.yx)) return;
+            const actingPlayer = state.players[state.currentTurn];
+            const allowedDivineCount = actingPlayer.passives.telepathy ? 3 : 2;
+            if (payload.yx.length > allowedDivineCount) return;
+            for (const c of payload.yx) {
+                if (state.gameboard.grid[c[0]][c[1]].faceUp === true) return;
+            }
             gameStore.dispatch(actions.divine(payload.actor, payload.value, payload.yx))
             // regular state with HIGHLIGHT data
             socket.broadcast.emit('UPDATE', gameStore.getState());
             // super secret state with divined cards faceUp = true
             let ephemeral = cloner.deep.copy(gameStore.getState());
-            for(c of payload.yx){
+            for (const c of payload.yx){
                 ephemeral.gameboard.grid[c[0]][c[1]].faceUp = true;
             }
             socket.emit('UPDATE', ephemeral);
@@ -347,18 +418,27 @@ module.exports = function(io){
 
         socket.on(actions.DIVINE_END, (payload)=>{
             console.log('sockets.js says: heard DIVINE_END');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
             gameStore.dispatch(actions.unhighlight());
             update();
         });
 
         socket.on(actions.UNHIGHLIGHT, ()=>{
             console.log('sockets.js says: heard UNHIGHLIGHT');
+            if (!validate.isCurrentTurnPlayer(socket, gameStore.getState())) return;
             gameStore.dispatch(actions.unhighlight());
             update();
         });
 
         socket.on(actions.WEAVE, (payload)=>{
             console.log('sockets.js says: heard WEAVE');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.areSafeCoords([payload.yx1])) return;
+            if (!validate.areSafeCoords([payload.yx2])) return;
             gameStore.dispatch(actions.weave(payload.actor, payload.yx1, payload.yx2));
             update();
             socket.broadcast.emit('HIGHLIGHT', {type: 'WEAVE', coords: [payload.yx1, payload.yx2]});
@@ -370,6 +450,10 @@ module.exports = function(io){
 
         socket.on(actions.OBSCURE, (payload)=>{
             console.log('sockets.js says: heard OBSCURE');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.areSafeCoords(payload.yx)) return;
             gameStore.dispatch(actions.obscure(payload.actor, payload.value, payload.yx));
             update();
             socket.broadcast.emit('HIGHLIGHT', {type: 'OBSCURE', coords: payload.yx});
@@ -377,16 +461,23 @@ module.exports = function(io){
 
         socket.on(actions.SCRY, (payload)=>{
             console.log('sockets.js says: heard SCRY');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
+            if (!validate.areSafeCoords(payload.yx)) return;
             gameStore.dispatch(actions.scry(payload.actor, payload.value, payload.yx));
             update();
             socket.broadcast.emit('HIGHLIGHT', {type: 'SCRY', coords: payload.yx});
-        });        
+        });
 
 
         // refresh, learn, etc
 
         socket.on(actions.LEARN, (payload)=>{
             console.log('sockets.js says: heard LEARN');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
             gameStore.dispatch(actions.learn(payload.actor, payload.draw, payload.keep));
             update();
         });
@@ -394,13 +485,17 @@ module.exports = function(io){
 
         socket.on(actions.LEARN_DISCARD, (payload)=>{
             console.log('sockets.js says: heard LEARN_DISCARD');
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!validate.isCurrentTurnPlayer(socket, state)) return;
             gameStore.dispatch(actions.learnDiscard(payload.actor, payload.cardIndices));
             update();
-        }); 
+        });
 
         // reset the game
         socket.on(actions.GAME_RESET, (payload)=>{
             console.log('sockets.js says: heard GAME_RESET');
+            if (!validate.isActorLegit(payload, socket, gameStore.getState())) return;
             gameStore.dispatch(actions.gameReset());
             io.emit('GAME_STARTED');
             gameStore.dispatch(actions.gameStart());
