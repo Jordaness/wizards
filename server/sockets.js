@@ -93,9 +93,13 @@ module.exports = function(io){
             currentPlayer = state.players.find((player)=>{
                 return player.id == payload.actor.id;
             })
-            // if current player is dead, go for ghost mode!
-            if(currentPlayer.health <= 0){
-                // ghost mode init event   
+            // if current player is dead, skip their turn
+            if(currentPlayer.isGhost){
+                console.log('sockets.js says: player is a ghost, skipping turn');
+                gameStore.dispatch(actions.turnEnd());
+                update();
+                io.emit('TURN_START');
+                return;
             }
             gameStore.dispatch(actions.turnStart());
             update();
@@ -234,6 +238,7 @@ module.exports = function(io){
 
                     case actions.ATTACK:
                         if (!validate.isValidTarget(payload.target, state)) break;
+                        if (!validate.isPlayerAlive(payload.target, state)) break;
                         gameStore.dispatch(actions.attack(payload.actor, payload.target, fx.value));
                         break;
 
@@ -243,6 +248,7 @@ module.exports = function(io){
 
                     case actions.DRAIN:
                         if (!validate.isValidTarget(payload.target, state)) break;
+                        if (!validate.isPlayerAlive(payload.target, state)) break;
                         gameStore.dispatch(actions.drain(payload.actor, payload.target, fx.value));
                         break;
 
@@ -259,6 +265,7 @@ module.exports = function(io){
                         break;
 
                     case actions.AP_MINUS:
+                        if (fx.targetPlayer && !validate.isPlayerAlive(payload.target, state)) break;
                         gameStore.dispatch(actions.apMinus(payload.actor, payload.target, fx.value, fx.targetPlayer, fx.limited));
                         break;
 
@@ -267,6 +274,7 @@ module.exports = function(io){
                         break;
 
                     case actions.HP_MINUS:
+                        if (fx.targetPlayer && !validate.isPlayerAlive(payload.target, state)) break;
                         gameStore.dispatch(actions.hpMinus(payload.actor, payload.target, fx.value, fx.targetPlayer, fx.limited, fx.magnitize));
                         break;
 
@@ -315,6 +323,7 @@ module.exports = function(io){
             if (!validate.isCurrentTurnPlayer(socket, state)) return;
             if (!validate.isSafeValue(payload.value, 1, 10)) return;
             if (!validate.isValidTarget(payload.target, state)) return;
+            if (!validate.isPlayerAlive(payload.target, state)) return;
             gameStore.dispatch(actions.attack(payload.actor, payload.target, payload.value));
             update();
         });
@@ -366,6 +375,7 @@ module.exports = function(io){
             if (!validate.isCurrentTurnPlayer(socket, state)) return;
             if (!validate.isSafeValue(payload.value, 1, 10)) return;
             if (!validate.isValidTarget(payload.target, state)) return;
+            if (!validate.isPlayerAlive(payload.target, state)) return;
             gameStore.dispatch(actions.hpMinus(payload.actor, payload.target, payload.value));
             update();
         });
@@ -387,6 +397,7 @@ module.exports = function(io){
             if (!validate.isCurrentTurnPlayer(socket, state)) return;
             if (!validate.isSafeValue(payload.value, 1, 10)) return;
             if (!validate.isValidTarget(payload.target, state)) return;
+            if (!validate.isPlayerAlive(payload.target, state)) return;
             gameStore.dispatch(actions.apMinus(payload.actor, payload.target, payload.value));
             update();
         });
@@ -495,7 +506,12 @@ module.exports = function(io){
         // reset the game
         socket.on(actions.GAME_RESET, (payload)=>{
             console.log('sockets.js says: heard GAME_RESET');
-            if (!validate.isActorLegit(payload, socket, gameStore.getState())) return;
+            const state = gameStore.getState();
+            if (!validate.isActorLegit(payload, socket, state)) return;
+            if (!state.gameOver && state.gameOn) {
+                console.log('sockets.js says: game is still in progress, ignoring GAME_RESET');
+                return;
+            }
             gameStore.dispatch(actions.gameReset());
             io.emit('GAME_STARTED');
             gameStore.dispatch(actions.gameStart());

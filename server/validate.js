@@ -39,4 +39,11 @@ function isValidTarget(target, state) {
     return state.players.some(p => p.id === target.id);
 }
 
-module.exports = { isActorLegit, isCurrentTurnPlayer, isSafeValue, areSafeCoords, playerOwnsSpell, isValidTarget };
+function isPlayerAlive(target, state) {
+    if (!target || typeof target !== 'object') return false;
+    const player = state.players.find(p => p.id === target.id);
+    if (!player) return false;
+    return !player.isGhost;
+}
+
+module.exports = { isActorLegit, isCurrentTurnPlayer, isSafeValue, areSafeCoords, playerOwnsSpell, isValidTarget, isPlayerAlive };
