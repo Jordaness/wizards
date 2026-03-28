@@ -33,6 +33,7 @@ function applyDamage(target, damage) {
 function checkDeath(player){
     if(player.health <= 0){
         player.isGhost = true;
+        player.shields = 0;
         player.passives.brilliance = false;
         player.passives.overdrive = false;
         player.passives.telepathy = false;
@@ -257,8 +258,8 @@ function reducer(state = initialState, action){
             let newState = Object.assign({}, state);
             if(action.targetPlayer){ //single target
                 let currentPlayer = findPlayerById(newState.players, action.target.id);
-                if (action.limited && currentPlayer.hptokens <= 0) { // skip player if stripping from negative pile. 
-                    null;
+                if (action.limited && currentPlayer.hptokens <= 0) {
+                    // skip player — nothing to strip from negative pile
                 } else if (action.limited && currentPlayer.hptokens > 0){
                     let hpSubtract = action.value;
                     while(currentPlayer.hptokens > 0 && hpSubtract > 0){ // stripping tokens
@@ -277,11 +278,11 @@ function reducer(state = initialState, action){
                             continue;
                         } else if (action.limited && target.hptokens > 0){
                             let hpSubtract = action.value;
+                            let caster = action.magnitize ? findPlayerById(newState.players, action.actor.id) : null;
                             while(target.hptokens > 0 && hpSubtract > 0){ // stripping tokens
                                 target.hptokens--;
                                 hpSubtract--;
-                                if(action.magnitize){
-                                    let caster = findPlayerById(newState.players, action.actor.id);
+                                if(caster){
                                     caster.hptokens++;
                                 }
                             }
@@ -310,8 +311,8 @@ function reducer(state = initialState, action){
             let newState = Object.assign({}, state);
             if(action.targetPlayer){ // single target
                 let currentPlayer = findPlayerById(newState.players, action.target.id);
-                if (action.limited && currentPlayer.aptokens <= 0) { // skip player if stripping from negative pile. 
-                    null;
+                if (action.limited && currentPlayer.aptokens <= 0) {
+                    // skip player — nothing to strip from negative pile
                 } else if (action.limited && currentPlayer.aptokens > 0){
                     let apSubtract = action.value;
                     while(currentPlayer.aptokens > 0 && apSubtract > 0){ // stripping tokens
@@ -422,7 +423,7 @@ function reducer(state = initialState, action){
             let newState = Object.assign({}, state);
             let currentPlayer = findPlayerById(newState.players, action.actor.id);
             // take indices of kept cards and add to actor's spells, while nulling in learnHelper.cardsDrawn to be filtered out momentarily
-            for(idx of action.cardIndices){
+            for(let idx of action.cardIndices){
                 currentPlayer.spells.push(newState.learnHelper.cardsDrawn[idx]);
                 newState.learnHelper.cardsDrawn[idx] = null;
             }
