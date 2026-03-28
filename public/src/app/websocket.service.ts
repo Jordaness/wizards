@@ -112,6 +112,7 @@ export class WebsocketService {
     }
 
     cardCounters(state) {
+        if (!state.gameboard || !state.gameboard.grid) { return; }
         for (const row of state.gameboard.grid) {
             for (const card of row) {
                 if(card.faceUp) { this.cardsFaceUp++ };
@@ -242,7 +243,11 @@ export class WebsocketService {
     }
 
     sendTarget(target) {
-        if(this.spell.targeted) { // multiple cast for same target
+        if (this.effects.length === 0) {
+            this.endActionStepCheck();
+            return;
+        }
+        if(this.spell && this.spell.targeted) { // multiple cast for same target
             while(this.effects.length > 0 && this.effects[0].targetPlayer){
                 this.socket.emit('CAST_EFFECT', {actor: this.actor, target, furtherEffects: [this.effects[0]]});
                 this.effects.shift(); 
@@ -389,7 +394,7 @@ export class WebsocketService {
     }
 
     reset() {
-        this.socket.emit('GAME_RESET', {});
+        this.socket.emit('GAME_RESET', {actor: this.actor});
     }
 
   }

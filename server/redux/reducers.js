@@ -155,6 +155,10 @@ function reducer(state = initialState, action){
             target = newState.players.find((player)=>{
                 return player.id == action.target.id;
             })
+            if (target.isGhost) {
+                console.log('Target is already dead, skipping ATTACK');
+                return state;
+            }
             damage = action.value;
             // check for shields and cancel 1:1
             if (target.shields > 0){
@@ -176,7 +180,7 @@ function reducer(state = initialState, action){
             newState = Object.assign({}, state);
             newState.history.push(action.message);
             for (let target of newState.players){
-                if(target.id == action.actor.id){
+                if(target.id == action.actor.id || target.isGhost){
                     continue;
                 } else {
                     damage = action.value;
@@ -203,6 +207,10 @@ function reducer(state = initialState, action){
             target = newState.players.find((player)=>{
                 return player.id == action.target.id;
             });
+            if (target.isGhost) {
+                console.log('Target is already dead, skipping DRAIN');
+                return state;
+            }
             damage = action.value;
             if (target.shields > 0){
                 while(target.shields > 0 && damage > 0){
@@ -287,10 +295,10 @@ function reducer(state = initialState, action){
                                 target.hptokens--;
                                 hpSubtract--;
                                 if(action.magnitize){
-                                    player = newState.players.find((player)=>{
-                                        return player.id == action.actor.id;
+                                    let caster = newState.players.find((p)=>{
+                                        return p.id == action.actor.id;
                                     })
-                                    player.hptokens++;
+                                    caster.hptokens++;
                                 }
                             }
                         } else { //regular hp_minus scenario
@@ -431,7 +439,7 @@ function reducer(state = initialState, action){
                 newState.learnHelper.cardsDrawn[idx] = null;
             }
             // filter nulled cards
-            newState.learnHelper.cardsDrawn.filter((spell)=>{
+            newState.learnHelper.cardsDrawn = newState.learnHelper.cardsDrawn.filter((spell)=>{
                 return spell !== null;
             });
             // push rest of learnHelper.cardsDrawn into gameboard.spellDeck.discard
@@ -450,9 +458,9 @@ function reducer(state = initialState, action){
             })        
             for(idx of action.cardIndices){
                 newState.gameboard.spellDeck.discard.push(currentPlayer.spells[idx]);
-                currentPlayer.spells[idx] == null;
+                currentPlayer.spells[idx] = null;
             }
-            currentPlayer.spells.filter((spell)=>{
+            currentPlayer.spells = currentPlayer.spells.filter((spell)=>{
                 return spell !== null;
             });
             newState.history.push(action.message);
@@ -609,8 +617,14 @@ function reducer(state = initialState, action){
                 checkDeath(currentPlayer);
                 isGameOver(newState);
             }
-            // advance state.currentTurn to next % number-of-players
-            newState.currentTurn = (newState.currentTurn + 1) % newState.players.length;
+            // advance state.currentTurn to next living player
+            let nextTurn = (newState.currentTurn + 1) % newState.players.length;
+            let loopGuard = 0;
+            while(newState.players[nextTurn].isGhost && loopGuard < newState.players.length){
+                nextTurn = (nextTurn + 1) % newState.players.length;
+                loopGuard++;
+            }
+            newState.currentTurn = nextTurn;
             newState.history.push(currentPlayer.name+ ' has ended their turn.');
             return newState;
 

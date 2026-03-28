@@ -22,7 +22,7 @@ module.exports = class Player {
 
     discard(card, deck){
         let idx = this.spells.indexOf(card);
-        if (idx !== -1) { array.splice(idx, 1) }; // untested
+        if (idx !== -1) { this.spells.splice(idx, 1) }; // untested
         deck.discard.push(card);
     }
 

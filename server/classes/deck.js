@@ -35,11 +35,14 @@ module.exports = class Deck {
     };
 
     topCard(){
-        let tempCard = this.cards.pop();
         if(this.cards.length == 0){
             this.shuffle();
         }
-        return tempCard;
+        if(this.cards.length == 0){
+            console.log('WARNING: Deck is completely empty, no cards to draw!');
+            return null;
+        }
+        return this.cards.pop();
     };
 
     shuffle(){ 
