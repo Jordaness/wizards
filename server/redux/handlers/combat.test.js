@@ -103,3 +103,59 @@ describe('handleShield', () => {
         expect(result.players[0].shields).toBe(3);
     });
 });
+
+describe('handleAttack edge cases', () => {
+    test('should set health to exactly 0 and trigger death', () => {
+        const s = makeState([makePlayer({ id: 1 }), makePlayer({ id: 2, health: 3 })]);
+        const result = handleAttack(s, { target: { id: 2 }, value: 3, message: 'exact kill' });
+        expect(result.players[1].health).toBeLessThanOrEqual(0);
+        expect(result.players[1].isGhost).toBe(true);
+    });
+
+    test('should overkill without error', () => {
+        const s = makeState([makePlayer({ id: 1 }), makePlayer({ id: 2, health: 1 })]);
+        const result = handleAttack(s, { target: { id: 2 }, value: 10, message: 'overkill' });
+        expect(result.players[1].isGhost).toBe(true);
+        expect(result.players[1].health).toBeLessThan(0);
+    });
+});
+
+describe('handleDrain edge cases', () => {
+    test('should absorb damage with shields before draining', () => {
+        const s = makeState([makePlayer({ id: 1, health: 2 }), makePlayer({ id: 2, shields: 2 })]);
+        const result = handleDrain(s, { actor: { id: 1 }, target: { id: 2 }, value: 3, message: 'drain shields' });
+        expect(result.players[1].shields).toBe(0);
+        expect(result.players[1].health).toBe(4);
+        expect(result.players[0].health).toBe(3);
+    });
+
+    test('should not heal actor above 5', () => {
+        const s = makeState([makePlayer({ id: 1, health: 5 }), makePlayer({ id: 2, health: 3 })]);
+        const result = handleDrain(s, { actor: { id: 1 }, target: { id: 2 }, value: 2, message: 'drain full hp' });
+        expect(result.players[0].health).toBe(5);
+        expect(result.players[1].health).toBe(1);
+    });
+
+    test('should stop draining when target reaches 0 health', () => {
+        const s = makeState([makePlayer({ id: 1, health: 1 }), makePlayer({ id: 2, health: 1 })]);
+        const result = handleDrain(s, { actor: { id: 1 }, target: { id: 2 }, value: 5, message: 'drain kill' });
+        expect(result.players[1].health).toBeLessThanOrEqual(0);
+        expect(result.players[1].isGhost).toBe(true);
+        expect(result.players[0].health).toBe(2);
+    });
+});
+
+describe('handleAttackAll edge cases', () => {
+    test('should trigger game over when all but one die', () => {
+        const s = makeState([
+            makePlayer({ id: 1, name: 'Attacker' }),
+            makePlayer({ id: 2, name: 'Weak1', health: 1 }),
+            makePlayer({ id: 3, name: 'Weak2', health: 1 })
+        ]);
+        const result = handleAttackAll(s, { actor: { id: 1 }, value: 5, message: 'aoe kill' });
+        expect(result.players[1].isGhost).toBe(true);
+        expect(result.players[2].isGhost).toBe(true);
+        expect(result.gameOver).toBe(true);
+        expect(result.winner.id).toBe(1);
+    });
+});

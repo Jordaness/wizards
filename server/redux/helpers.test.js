@@ -41,6 +41,25 @@ describe('applyDamage', () => {
         expect(p.shields).toBe(2);
         expect(p.health).toBe(5);
     });
+
+    test('should return remaining damage after shields', () => {
+        const p = makePlayer({ health: 5, shields: 2 });
+        const remaining = applyDamage(p, 5);
+        expect(remaining).toBe(3);
+    });
+
+    test('should return 0 remaining when shields absorb all', () => {
+        const p = makePlayer({ health: 5, shields: 5 });
+        const remaining = applyDamage(p, 3);
+        expect(remaining).toBe(0);
+    });
+
+    test('should handle 0 damage', () => {
+        const p = makePlayer({ health: 5, shields: 2 });
+        applyDamage(p, 0);
+        expect(p.health).toBe(5);
+        expect(p.shields).toBe(2);
+    });
 });
 
 describe('checkDeath', () => {

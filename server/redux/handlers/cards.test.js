@@ -98,4 +98,24 @@ describe('handleReplaceElements', () => {
         const r = handleReplaceElements(s, { yx: [[0, 0]] });
         expect(r.gameboard.grid[0][0]).toBe(origCard);
     });
+
+    test('should replace multiple cards at once', () => {
+        const card1 = { elem: 'aether', faceUp: false };
+        const card2 = { elem: 'void', faceUp: false };
+        const s = makeState([card1, card2]);
+        const old1 = s.gameboard.grid[0][0];
+        const old2 = s.gameboard.grid[0][1];
+        const r = handleReplaceElements(s, { yx: [[0, 0], [0, 1]] });
+        expect(r.gameboard.grid[0][0]).not.toBe(old1);
+        expect(r.gameboard.grid[0][1]).not.toBe(old2);
+        expect(r.gameboard.deck.discard).toContain(old1);
+        expect(r.gameboard.deck.discard).toContain(old2);
+    });
+
+    test('should not set edge cards face up', () => {
+        const newCard = { elem: 'aether', faceUp: false };
+        const s = makeState([newCard]);
+        const r = handleReplaceElements(s, { yx: [[0, 0]] });
+        expect(r.gameboard.grid[0][0].faceUp).toBe(false);
+    });
 });

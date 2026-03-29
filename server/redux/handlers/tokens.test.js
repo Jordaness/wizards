@@ -73,4 +73,28 @@ describe('handleApMinus', () => {
         const r = handleApMinus(s, { actor: { id: 1 }, target: { id: 2 }, value: 1, targetPlayer: true, message: 'ap- msg' });
         expect(r.players[1].aptokens).toBe(-1);
     });
+
+    test('should apply AOE to all non-actor players', () => {
+        const s = makeState([
+            makePlayer({ id: 1, name: 'Caster' }),
+            makePlayer({ id: 2, name: 'T1', aptokens: 0 }),
+            makePlayer({ id: 3, name: 'T2', aptokens: 0 })
+        ]);
+        const r = handleApMinus(s, { actor: { id: 1 }, value: 2, targetPlayer: false, message: 'aoe ap- msg' });
+        expect(r.players[0].aptokens).toBe(0);
+        expect(r.players[1].aptokens).toBe(-2);
+        expect(r.players[2].aptokens).toBe(-2);
+    });
+
+    test('should strip limited aptokens from target', () => {
+        const s = makeState([makePlayer({ id: 1 }), makePlayer({ id: 2, aptokens: 3 })]);
+        const r = handleApMinus(s, { actor: { id: 1 }, target: { id: 2 }, value: 2, targetPlayer: true, limited: true, message: 'strip ap msg' });
+        expect(r.players[1].aptokens).toBe(1);
+    });
+
+    test('should skip limited strip when target already negative', () => {
+        const s = makeState([makePlayer({ id: 1 }), makePlayer({ id: 2, aptokens: -1 })]);
+        const r = handleApMinus(s, { actor: { id: 1 }, target: { id: 2 }, value: 2, targetPlayer: true, limited: true, message: 'skip ap msg' });
+        expect(r.players[1].aptokens).toBe(-1);
+    });
 });

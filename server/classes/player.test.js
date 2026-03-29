@@ -109,6 +109,56 @@ describe('processHpTokens', () => {
     });
 });
 
+describe('Player.draw', () => {
+    test('should draw a card from deck and add to spells', () => {
+        const p = new Player(1, 's', 'Wiz');
+        const mockDeck = {
+            cards: [{ name: 'Fireball' }],
+            discard: [],
+            topCard() { return this.cards.pop(); }
+        };
+        p.draw(mockDeck);
+        expect(p.spells).toHaveLength(1);
+        expect(p.spells[0].name).toBe('Fireball');
+    });
+
+    test('should handle null from empty deck', () => {
+        const p = new Player(1, 's', 'Wiz');
+        const mockDeck = {
+            cards: [],
+            discard: [],
+            topCard() { return null; }
+        };
+        p.draw(mockDeck);
+        expect(p.spells).toHaveLength(1);
+        expect(p.spells[0]).toBeNull();
+    });
+});
+
+describe('Player.discard', () => {
+    test('should remove card from spells and add to deck discard', () => {
+        const p = new Player(1, 's', 'Wiz');
+        const card = { name: 'Fireball' };
+        p.spells = [card, { name: 'Heal' }];
+        const mockDeck = { discard: [] };
+        p.discard(card, mockDeck);
+        expect(p.spells).toHaveLength(1);
+        expect(p.spells[0].name).toBe('Heal');
+        expect(mockDeck.discard).toHaveLength(1);
+        expect(mockDeck.discard[0].name).toBe('Fireball');
+    });
+
+    test('should still push to discard even if card not in spells', () => {
+        const p = new Player(1, 's', 'Wiz');
+        const card = { name: 'Missing' };
+        p.spells = [{ name: 'Heal' }];
+        const mockDeck = { discard: [] };
+        p.discard(card, mockDeck);
+        expect(p.spells).toHaveLength(1);
+        expect(mockDeck.discard).toHaveLength(1);
+    });
+});
+
 describe('Player.reset', () => {
     test('should reset all fields to defaults', () => {
         const p = new Player(1, 's', 'Wiz');
