@@ -14,6 +14,8 @@ import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { EnemiesComponent } from './enemies/enemies.component';
 import { PlayerComponent } from './player/player.component';
 import { LearnComponent } from './learn/learn.component';
+import { RiveAnimationComponent } from './rive-animation/rive-animation.component';
+import { RiveAnimationService } from './rive-animation.service';
 
 @NgModule({
   declarations: [
@@ -21,7 +23,8 @@ import { LearnComponent } from './learn/learn.component';
     GameboardComponent,
     EnemiesComponent,
     PlayerComponent,
-    LearnComponent
+    LearnComponent,
+    RiveAnimationComponent
   ],
   imports: [
     BrowserModule,
@@ -34,6 +37,7 @@ import { LearnComponent } from './learn/learn.component';
     GameService,
     ActionService,
     WebsocketService,
+    RiveAnimationService,
   ],
   bootstrap: [AppComponent]
 })
