@@ -17,7 +17,7 @@ export interface RiveAnimationConfig {
 export class RiveAnimationService {
   private activeAnimations: Map<string, Rive> = new Map();
 
-  create(id: string, config: RiveAnimationConfig): Rive {
+  create(id: string, config: RiveAnimationConfig, onLoad?: (rive: Rive) => void): Rive {
     this.destroy(id);
 
     const rive = new Rive({
@@ -30,6 +30,10 @@ export class RiveAnimationService {
         fit: config.fit || Fit.Contain,
         alignment: config.alignment || Alignment.Center,
       }),
+      onLoad: () => {
+        rive.resizeDrawingSurfaceToCanvas();
+        if (onLoad) { onLoad(rive); }
+      }
     });
 
     this.activeAnimations.set(id, rive);

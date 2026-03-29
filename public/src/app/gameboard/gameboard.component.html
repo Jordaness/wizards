@@ -1,7 +1,7 @@
 <div class="board" *ngIf="gameState.value > 1 && gameState.mode !== 'learnAction' && !state.gameOver" >
   <div *ngFor="let row of state.gameboard.grid">
     <div class="card-wrapper" *ngFor="let card of row"> 
-      <div class="card" (click)="divineTime(card); spellCheck(card); weaveTime(card); scryTime(card); obscureTime(card);" [@cardState]="card.faceUp"> 
+      <div class="card" (click)="divineTime(card); spellCheck(card); weaveTime(card); scryTime(card); obscureTime(card);" [@cardState]="card.faceUp" style="position: relative;"> 
         <!-- front of the card-->
         <div class="front">
           <img src="../../assets/{{card.elem}}.png" alt="" width="75px" height="75px">
@@ -10,6 +10,8 @@
         <div [ngClass]="{'backReg': !card.highlight, 'backHighlight': card.highlight}">
           <img src="../../assets/magic_hat.png" alt="" width="75px" height="75px">
         </div>
+        <!-- Rive card effect overlay -->
+        <app-card-effect [cardId]="'card-' + card.elem + '-' + card.row + '-' + card.col'" [faceUp]="card.faceUp" [width]="75" [height]="75"></app-card-effect>
         
       </div>
     </div>

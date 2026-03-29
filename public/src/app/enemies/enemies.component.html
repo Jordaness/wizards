@@ -1,5 +1,6 @@
 <div *ngIf="enemies && !state.gameOver">  
-    <div *ngFor="let enemy of enemies" class="enemy" (click)="selectEnemy(enemy)">
+    <div *ngFor="let enemy of enemies" class="enemy" (click)="selectEnemy(enemy)" style="position: relative;">
+        <app-spell-effect [targetId]="'enemy-' + enemy.id" [player]="enemy"></app-spell-effect>
         <h3>{{enemy.name}}</h3>
         <div *ngIf="enemy.shields > 0 && !enemy.isGhost"class="shield">{{enemy.shields}}
           <div class="health">{{enemy.health}}</div>

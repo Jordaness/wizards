@@ -16,6 +16,9 @@ import { PlayerComponent } from './player/player.component';
 import { LearnComponent } from './learn/learn.component';
 import { RiveAnimationComponent } from './rive-animation/rive-animation.component';
 import { RiveAnimationService } from './rive-animation.service';
+import { SpellEffectsService } from './spell-effects.service';
+import { SpellEffectComponent } from './spell-effect/spell-effect.component';
+import { CardEffectComponent } from './card-effect/card-effect.component';
 
 @NgModule({
   declarations: [
@@ -24,7 +27,9 @@ import { RiveAnimationService } from './rive-animation.service';
     EnemiesComponent,
     PlayerComponent,
     LearnComponent,
-    RiveAnimationComponent
+    RiveAnimationComponent,
+    SpellEffectComponent,
+    CardEffectComponent
   ],
   imports: [
     BrowserModule,
@@ -38,6 +43,7 @@ import { RiveAnimationService } from './rive-animation.service';
     ActionService,
     WebsocketService,
     RiveAnimationService,
+    SpellEffectsService,
   ],
   bootstrap: [AppComponent]
 })
