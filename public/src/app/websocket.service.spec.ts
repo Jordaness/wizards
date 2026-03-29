@@ -2,16 +2,42 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 
 import { WebsocketService } from './websocket.service';
+import { SpellEffectsService } from './spell-effects.service';
+import { RiveAnimationService } from './rive-animation.service';
+
+class MockSpellEffectsService {
+  fireEffect(targetId: string, action: string, values: any = {}) {}
+  updatePlayerState(targetId: string, player: any) {}
+  initEffect(targetId: string, canvas: any, artboard: string) {}
+  destroyTarget(targetId: string) {}
+  destroyAll() {}
+}
+
+class MockRiveAnimationService {
+  create() { return {}; }
+  destroy() {}
+  play() {}
+  stop() {}
+  pause() {}
+  get() { return undefined; }
+  destroyAll() {}
+}
 
 describe('WebsocketService', () => {
   let service: WebsocketService;
+  let mockSpellFx: MockSpellEffectsService;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
-      providers: [WebsocketService]
+      providers: [
+        WebsocketService,
+        { provide: SpellEffectsService, useClass: MockSpellEffectsService },
+        { provide: RiveAnimationService, useClass: MockRiveAnimationService }
+      ]
     });
     service = TestBed.get(WebsocketService);
+    mockSpellFx = TestBed.get(SpellEffectsService);
   });
 
   it('should be created', () => {
@@ -138,6 +164,78 @@ describe('WebsocketService', () => {
     it('should return null when no actor set', () => {
       service.actor = null;
       expect(service.getPlayer()).toBeNull();
+    });
+  });
+
+  describe('detectAndFireEffects', () => {
+    it('should fire ATTACK_HIT when player health decreases', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 2, health: 5, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 2, health: 3, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('enemy-2', 'ATTACK_HIT', { damageValue: 2 });
+    });
+
+    it('should fire SHIELD_HIT when shields decrease with health', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 2, health: 5, shields: 2, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 2, health: 4, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('enemy-2', 'SHIELD_HIT', {});
+    });
+
+    it('should fire CURE when health increases', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 1, health: 3, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 1, health: 5, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('player-1', 'CURE', { healValue: 2 });
+    });
+
+    it('should fire DEATH when player becomes ghost', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 2, health: 1, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 2, health: 0, shields: 0, hptokens: 0, aptokens: 0, isGhost: true }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('enemy-2', 'DEATH', {});
+    });
+
+    it('should fire HP_PLUS when hptokens increase', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 1, health: 5, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 1, health: 5, shields: 0, hptokens: 2, aptokens: 0, isGhost: false }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('player-1', 'HP_PLUS', { isRegening: true, hpValue: 2 });
+    });
+
+    it('should fire AP_MINUS when aptokens go negative', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 2, health: 5, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 2, health: 5, shields: 0, hptokens: 0, aptokens: -1, isGhost: false }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('enemy-2', 'AP_MINUS', { isSlowed: true, apValue: 1 });
+    });
+
+    it('should not fire effects when prev state is null', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      (service as any).detectAndFireEffects(null, { players: [] });
+      expect(mockSpellFx.fireEffect).not.toHaveBeenCalled();
+    });
+
+    it('should fire SHIELD when shields increase', () => {
+      spyOn(mockSpellFx, 'fireEffect');
+      service.actor = { id: 1 };
+      const prev = { players: [{ id: 1, health: 5, shields: 0, hptokens: 0, aptokens: 0, isGhost: false }] };
+      const curr = { players: [{ id: 1, health: 5, shields: 3, hptokens: 0, aptokens: 0, isGhost: false }] };
+      (service as any).detectAndFireEffects(prev, curr);
+      expect(mockSpellFx.fireEffect).toHaveBeenCalledWith('player-1', 'SHIELD', { isShielded: true, currentShieldValue: 3 });
     });
   });
 });

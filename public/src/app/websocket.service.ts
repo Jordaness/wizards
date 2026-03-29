@@ -1,8 +1,9 @@
-import { Injectable } from '@angular/core';
+import { Injectable, Inject, Optional } from '@angular/core';
 import * as io from 'socket.io-client';
 import { HttpClient } from '@angular/common/http';
 
-import { Observable, Subject, BehaviorSubject } from 'rxjs'; // rxjs/observable (Angular 4) doesn't work with Angular 6, so we just need to use rxjs
+import { Observable, Subject, BehaviorSubject } from 'rxjs';
+import { SpellEffectsService } from './spell-effects.service';
 
 @Injectable({
   providedIn: 'root'
@@ -29,7 +30,9 @@ export class WebsocketService {
 
     private socket: SocketIOClient.Socket; // the client instance of socket.io
 
-    constructor(private _http: HttpClient) {
+    private previousState: any = null;
+
+    constructor(private _http: HttpClient, @Optional() private spellFx: SpellEffectsService) {
         console.log('i built a websocket');
         this.socket = io();
         this.socket.on('connect', () => {
@@ -47,12 +50,13 @@ export class WebsocketService {
         });
 
         this.socket.on('UPDATE', (state) => {
-            // console.log('websocket.service says: state UPDATE');
             this._state.next(state);
             if (state) {
+                this.detectAndFireEffects(this.previousState, state);
                 this.cardCounterReset();
                 this.getActor(state);
                 this.cardCounters(state);
+                this.previousState = state;
             }
         });
 
@@ -225,6 +229,10 @@ export class WebsocketService {
         this.socket.emit('REPLACE_ELEMENTS', {actor : this.actor, cards: discard});
         // remove spell from player's hand
         this.socket.emit('CAST_SUCCESS', {actor : this.actor, spell});
+        // fire cast success effect
+        if (this.spellFx && this.actor) {
+            this.spellFx.fireEffect('player-' + this.actor.id, 'CAST_SUCCESS', {});
+        }
         // save spell, spell effects, and actor for all spell effects;
         this.spell = spell;
         this.effects = spell.effects;
@@ -238,6 +246,10 @@ export class WebsocketService {
         this.socket.emit('REPLACE_ELEMENTS', {actor : this.actor, cards: discard});
         // player to experience cast fail punishment
         this.socket.emit('CAST_FAIL', {actor : this.actor, spell});
+        // fire cast fail effect
+        if (this.spellFx && this.actor) {
+            this.spellFx.fireEffect('player-' + this.actor.id, 'CAST_FAIL', {});
+        }
         // this action is complete
         this._gameState.next({'mode' : 'ActionEnd' , 'value' : 8});
     }
@@ -246,6 +258,19 @@ export class WebsocketService {
         if (this.effects.length === 0) {
             this.endActionStepCheck();
             return;
+        }
+        // Fire attack/drain trigger on the caster side
+        if (this.spellFx && this.actor) {
+            const effectType = this.effects[0] ? this.effects[0].type : null;
+            if (effectType === 'ATTACK' || effectType === 'ATTACK_ALL') {
+                this.spellFx.fireEffect('player-' + this.actor.id, 'ATTACK', {
+                    damageValue: this.effects[0].value
+                });
+            } else if (effectType === 'DRAIN') {
+                this.spellFx.fireEffect('player-' + this.actor.id, 'DRAIN', {
+                    drainValue: this.effects[0].value
+                });
+            }
         }
         if(this.spell && this.spell.targeted) { // multiple cast for same target
             while(this.effects.length > 0 && this.effects[0].targetPlayer){
@@ -395,6 +420,91 @@ export class WebsocketService {
 
     reset() {
         this.socket.emit('GAME_RESET', {actor: this.actor});
+    }
+
+    /**
+     * Compare previous and current state to detect and fire one-shot Rive effects.
+     */
+    private detectAndFireEffects(prev: any, curr: any): void {
+        if (!this.spellFx || !prev || !curr) { return; }
+        if (!prev.players || !curr.players) { return; }
+
+        for (const currPlayer of curr.players) {
+            const prevPlayer = prev.players.find(p => p.id === currPlayer.id);
+            if (!prevPlayer) { continue; }
+
+            const targetId = (this.actor && currPlayer.id === this.actor.id)
+                ? 'player-' + currPlayer.id
+                : 'enemy-' + currPlayer.id;
+
+            // Detect health decrease (attack/drain hit)
+            if (currPlayer.health < prevPlayer.health) {
+                const damage = prevPlayer.health - currPlayer.health;
+                if (prevPlayer.shields > currPlayer.shields) {
+                    // Shield absorbed some damage
+                    this.spellFx.fireEffect(targetId, 'SHIELD_HIT', {});
+                }
+                this.spellFx.fireEffect(targetId, 'ATTACK_HIT', { damageValue: damage });
+            }
+
+            // Detect shield gain
+            if (currPlayer.shields > prevPlayer.shields) {
+                this.spellFx.fireEffect(targetId, 'SHIELD', {
+                    isShielded: true,
+                    currentShieldValue: currPlayer.shields
+                });
+            }
+
+            // Detect healing
+            if (currPlayer.health > prevPlayer.health && !prevPlayer.isGhost) {
+                const healed = currPlayer.health - prevPlayer.health;
+                this.spellFx.fireEffect(targetId, 'CURE', { healValue: healed });
+            }
+
+            // Detect death
+            if (!prevPlayer.isGhost && currPlayer.isGhost) {
+                this.spellFx.fireEffect(targetId, 'DEATH', {});
+            }
+
+            // Detect drain (actor healed while target lost health — handled by CURE above for actor)
+
+            // Detect hptoken changes
+            if (currPlayer.hptokens !== prevPlayer.hptokens) {
+                if (currPlayer.hptokens > 0) {
+                    this.spellFx.fireEffect(targetId, 'HP_PLUS', {
+                        isRegening: true,
+                        hpValue: currPlayer.hptokens
+                    });
+                } else if (currPlayer.hptokens < 0) {
+                    this.spellFx.fireEffect(targetId, 'HP_MINUS', {
+                        isBurning: true,
+                        burnValue: Math.abs(currPlayer.hptokens)
+                    });
+                } else {
+                    // Tokens cleared
+                    this.spellFx.fireEffect(targetId, 'HP_PLUS', { isRegening: false, hpValue: 0 });
+                    this.spellFx.fireEffect(targetId, 'HP_MINUS', { isBurning: false, burnValue: 0 });
+                }
+            }
+
+            // Detect aptoken changes
+            if (currPlayer.aptokens !== prevPlayer.aptokens) {
+                if (currPlayer.aptokens > 0) {
+                    this.spellFx.fireEffect(targetId, 'AP_PLUS', {
+                        isHasted: true,
+                        apValue: currPlayer.aptokens
+                    });
+                } else if (currPlayer.aptokens < 0) {
+                    this.spellFx.fireEffect(targetId, 'AP_MINUS', {
+                        isSlowed: true,
+                        apValue: Math.abs(currPlayer.aptokens)
+                    });
+                } else {
+                    this.spellFx.fireEffect(targetId, 'AP_PLUS', { isHasted: false, apValue: 0 });
+                    this.spellFx.fireEffect(targetId, 'AP_MINUS', { isSlowed: false, apValue: 0 });
+                }
+            }
+        }
     }
 
   }
